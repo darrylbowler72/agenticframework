@@ -167,7 +167,7 @@ resource "aws_lb_listener_rule" "planner_workflows" {
 
   condition {
     path_pattern {
-      values = ["/workflows", "/workflows/*"]
+      values = ["/workflows", "/workflows/*", "/dev/workflows", "/dev/workflows/*"]
     }
   }
 }
@@ -183,7 +183,7 @@ resource "aws_lb_listener_rule" "codegen" {
 
   condition {
     path_pattern {
-      values = ["/generate", "/generate/*"]
+      values = ["/generate", "/generate/*", "/dev/generate", "/dev/generate/*"]
     }
   }
 }
@@ -199,7 +199,7 @@ resource "aws_lb_listener_rule" "remediation" {
 
   condition {
     path_pattern {
-      values = ["/remediate", "/remediate/*"]
+      values = ["/remediate", "/remediate/*", "/dev/remediate", "/dev/remediate/*"]
     }
   }
 }
@@ -216,7 +216,7 @@ resource "aws_lb_listener_rule" "planner_health" {
 
   condition {
     path_pattern {
-      values = ["/planner/health"]
+      values = ["/planner/health", "/dev/planner/health"]
     }
   }
 }
@@ -232,7 +232,7 @@ resource "aws_lb_listener_rule" "codegen_health" {
 
   condition {
     path_pattern {
-      values = ["/codegen/health"]
+      values = ["/codegen/health", "/dev/codegen/health"]
     }
   }
 }
@@ -248,7 +248,7 @@ resource "aws_lb_listener_rule" "remediation_health" {
 
   condition {
     path_pattern {
-      values = ["/remediation/health"]
+      values = ["/remediation/health", "/dev/remediation/health"]
     }
   }
 }

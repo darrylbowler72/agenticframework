@@ -698,6 +698,7 @@ codegen_agent = CodeGenAgent()
 
 
 @app.post("/generate")
+@app.post("/dev/generate")
 async def generate_microservice(request: ServiceScaffoldRequest):
     """Generate a new microservice."""
     try:
@@ -718,6 +719,7 @@ async def generate_microservice(request: ServiceScaffoldRequest):
 
 
 @app.get("/health")
+@app.get("/dev/health")
 async def health_check():
     """Health check endpoint."""
     return {

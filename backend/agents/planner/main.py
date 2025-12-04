@@ -351,6 +351,7 @@ planner_agent = PlannerAgent()
 
 
 @app.post("/workflows", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/dev/workflows", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)
 async def create_workflow(request: WorkflowRequest):
     """
     Create a new workflow.
@@ -387,12 +388,14 @@ async def create_workflow(request: WorkflowRequest):
 
 
 @app.get("/workflows/{workflow_id}", response_model=WorkflowStatus)
+@app.get("/dev/workflows/{workflow_id}", response_model=WorkflowStatus)
 async def get_workflow(workflow_id: str):
     """Get workflow status."""
     return await planner_agent.get_workflow_status(workflow_id)
 
 
 @app.get("/health")
+@app.get("/dev/health")
 async def health_check():
     """Health check endpoint."""
     return {

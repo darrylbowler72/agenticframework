@@ -2,24 +2,21 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+# Copy common modules and requirements
+COPY agents/common/ /app/common/
+COPY agents/common/requirements.txt /app/requirements.txt
 
-# Copy requirements
-COPY requirements.txt .
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy remediation agent
+COPY agents/remediation/ /app/remediation/
+
+# Set Python path
+ENV PYTHONPATH=/app
 
 # Expose port
 EXPOSE 8002
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD python -c "import httpx; httpx.get('http://localhost:8002/health')"
-
-# Run application
-CMD ["uvicorn", "agents.remediation.main:app", "--host", "0.0.0.0", "--port", "8002"]
+# Run the agent
+CMD ["uvicorn", "remediation.main:app", "--host", "0.0.0.0", "--port", "8002"]

@@ -2,25 +2,21 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies and Git
-RUN apt-get update && apt-get install -y \
-    gcc \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+# Copy common modules and requirements
+COPY agents/common/ /app/common/
+COPY agents/common/requirements.txt /app/requirements.txt
 
-# Copy requirements
-COPY requirements.txt .
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy codegen agent
+COPY agents/codegen/ /app/codegen/
+
+# Set Python path
+ENV PYTHONPATH=/app
 
 # Expose port
 EXPOSE 8001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD python -c "import httpx; httpx.get('http://localhost:8001/health')"
-
-# Run application
-CMD ["uvicorn", "agents.codegen.main:app", "--host", "0.0.0.0", "--port", "8001"]
+# Run the agent
+CMD ["uvicorn", "codegen.main:app", "--host", "0.0.0.0", "--port", "8001"]

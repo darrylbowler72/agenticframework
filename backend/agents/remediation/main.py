@@ -467,6 +467,7 @@ remediation_agent = RemediationAgent()
 
 
 @app.post("/webhooks/gitlab/pipeline")
+@app.post("/dev/webhooks/gitlab/pipeline")
 async def handle_pipeline_webhook(request: Request):
     """Receive pipeline failure events from GitLab."""
     payload = await request.json()
@@ -487,6 +488,7 @@ async def handle_pipeline_webhook(request: Request):
 
 
 @app.post("/remediate")
+@app.post("/dev/remediate")
 async def trigger_remediation(pipeline_id: int, project_id: int):
     """Manually trigger remediation for a pipeline."""
     try:
@@ -504,6 +506,7 @@ async def trigger_remediation(pipeline_id: int, project_id: int):
 
 
 @app.get("/health")
+@app.get("/dev/health")
 async def health_check():
     """Health check endpoint."""
     return {
