@@ -668,13 +668,18 @@ See documentation for more details.
             # Get authenticated user
             user = self.github_client.get_user()
 
-            # Create repository
+            # Create repository with auto_init to avoid empty repo issue
             repo = user.create_repo(
                 name=service_name,
                 description=f'Auto-generated microservice: {service_name}',
                 private=True,
-                auto_init=False  # Don't auto-create README
+                auto_init=True  # Initialize with README to create initial commit
             )
+
+            # Get the default branch
+            default_branch = repo.default_branch
+            ref = repo.get_git_ref(f"heads/{default_branch}")
+            latest_commit = repo.get_git_commit(ref.object.sha)
 
             # Create blobs for all files
             blobs = []
@@ -687,17 +692,18 @@ See documentation for more details.
                     "sha": blob.sha
                 })
 
-            # Create tree with all blobs
-            tree = repo.create_git_tree(blobs)
+            # Create tree based on the latest commit
+            tree = repo.create_git_tree(blobs, base_tree=latest_commit.tree)
 
-            # Create commit
+            # Create commit on top of initial commit
             commit = repo.create_git_commit(
-                message="Initial commit: Auto-generated microservice code",
-                tree=tree
+                message="Add auto-generated microservice code",
+                tree=tree,
+                parents=[latest_commit]
             )
 
-            # Create main branch reference
-            repo.create_git_ref("refs/heads/main", commit.sha)
+            # Update the default branch to point to new commit
+            ref.edit(commit.sha)
 
             self.logger.info(f"Created repository: {repo.html_url}")
             return repo.html_url
