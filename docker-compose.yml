@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: agentic-postgres
+    environment:
+      POSTGRES_USER: agenticuser
+      POSTGRES_PASSWORD: agenticpass
+      POSTGRES_DB: agenticframework
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agenticuser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Planner Agent
+  planner-agent:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.planner
+    container_name: planner-agent
+    ports:
+      - "8000:8000"
+    environment:
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DATABASE_URL=postgresql://agenticuser:agenticpass@postgres:5432/agenticframework
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn agents.planner.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # CodeGen Agent
+  codegen-agent:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.codegen
+    container_name: codegen-agent
+    ports:
+      - "8001:8001"
+    environment:
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DATABASE_URL=postgresql://agenticuser:agenticpass@postgres:5432/agenticframework
+    depends_on:
+      - postgres
+    command: uvicorn agents.codegen.main:app --host 0.0.0.0 --port 8001 --reload
+
+  # Remediation Agent
+  remediation-agent:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.remediation
+    container_name: remediation-agent
+    ports:
+      - "8002:8002"
+    environment:
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DATABASE_URL=postgresql://agenticuser:agenticpass@postgres:5432/agenticframework
+    depends_on:
+      - postgres
+    command: uvicorn agents.remediation.main:app --host 0.0.0.0 --port 8002 --reload
+
+  # Chatbot Agent
+  chatbot-agent:
+    build:
+      context: ./agents/chatbot
+      dockerfile: Dockerfile
+    container_name: chatbot-agent
+    ports:
+      - "3000:3000"
+    environment:
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+      - API_GATEWAY_URL=http://planner-agent:8000
+    depends_on:
+      - planner-agent
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: agentic-network

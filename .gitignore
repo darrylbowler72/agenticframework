@@ -32,10 +32,80 @@ bld/
 .DS_Store
 Thumbs.db
 
-# Dependencies
-node_modules/
-venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+env/
+ENV/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+
+# AWS
+*.pem
+*.key
+
+# Environment
 .env
 .env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+logs/
+*.pid
+*.seed
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# Docker
+*.tar
+
+# Secrets
+*secret*
+*credentials*
+*password*
+*token*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Deployment
+deployment.zip
+*.zip
+package/

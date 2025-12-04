@@ -1,0 +1,17 @@
+# Slack Bot Framework
+slack-bolt==1.18.1
+slack-sdk==3.26.2
+
+# FastAPI
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# AWS SDK
+boto3==1.34.34
+
+# AI
+anthropic==0.18.1
+
+# Utilities
+python-dotenv==1.0.0
+httpx==0.26.0

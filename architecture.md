@@ -1,18 +1,157 @@
 # DevOps Agentic Framework - Architecture Documentation
 
 ## Table of Contents
-1. [System Overview](#system-overview)
-2. [Architecture Principles](#architecture-principles)
-3. [Agent Architecture](#agent-architecture)
-4. [AWS Infrastructure](#aws-infrastructure)
-5. [Data Flow & Orchestration](#data-flow--orchestration)
-6. [Integration Architecture](#integration-architecture)
-7. [Security & Governance](#security--governance)
-8. [Observability & Monitoring](#observability--monitoring)
-9. [Developer Experience](#developer-experience)
-10. [Deployment Strategy](#deployment-strategy)
-11. [API Specifications](#api-specifications)
-12. [Scaling & Performance](#scaling--performance)
+1. [Current Deployment Status](#current-deployment-status)
+2. [System Overview](#system-overview)
+3. [Architecture Principles](#architecture-principles)
+4. [Agent Architecture](#agent-architecture)
+5. [AWS Infrastructure](#aws-infrastructure)
+6. [Data Flow & Orchestration](#data-flow--orchestration)
+7. [Integration Architecture](#integration-architecture)
+8. [Security & Governance](#security--governance)
+9. [Observability & Monitoring](#observability--monitoring)
+10. [Developer Experience](#developer-experience)
+11. [Deployment Strategy](#deployment-strategy)
+12. [API Specifications](#api-specifications)
+13. [Scaling & Performance](#scaling--performance)
+
+---
+
+## Current Deployment Status
+
+### Deployed Components (Phase 1)
+
+**Infrastructure Status**: ✅ **FULLY DEPLOYED**
+
+#### ECS Fargate Services (Running)
+- **Planner Agent** - `dev-planner-agent` service
+  - Container: `773550624765.dkr.ecr.us-east-1.amazonaws.com/planner-agent:latest`
+  - Port: 8000
+  - Resources: 512 CPU / 1024 MB Memory
+  - Health Check: HTTP `/health` endpoint
+
+- **CodeGen Agent** - `dev-codegen-agent` service
+  - Container: `773550624765.dkr.ecr.us-east-1.amazonaws.com/codegen-agent:latest`
+  - Port: 8001
+  - Resources: 512 CPU / 1024 MB Memory
+  - Health Check: HTTP `/health` endpoint
+
+- **Remediation Agent** - `dev-remediation-agent` service
+  - Container: `773550624765.dkr.ecr.us-east-1.amazonaws.com/remediation-agent:latest`
+  - Port: 8002
+  - Resources: 512 CPU / 1024 MB Memory
+  - Health Check: HTTP `/health` endpoint
+
+#### AWS Infrastructure (Deployed)
+- **VPC**: Custom VPC with public/private subnets across 2 AZs
+- **API Gateway**: HTTP API for agent orchestration
+- **EventBridge**: Custom event bus for agent communication
+- **DynamoDB**: 3 tables (workflows, deployments, policy-violations)
+- **S3**: 3 buckets (artifacts, templates, policy-bundles)
+- **Secrets Manager**: 3 secrets (Anthropic API key, GitLab credentials, Slack credentials)
+- **CloudWatch**: Log groups for agents and API Gateway
+- **ECS Cluster**: Fargate cluster `dev-agentic-cluster`
+- **ECR**: 3 container repositories for agent images
+- **IAM**: Task execution and task roles with appropriate permissions
+- **Security Groups**: ECS tasks security group with VPC-level access
+
+#### Total Resources Deployed
+- **70+ AWS Resources** managed by Terraform
+- **Infrastructure State**: Stored in S3 with DynamoDB locking
+- **Environment**: Development (`dev`)
+- **Region**: us-east-1
+
+### Planned Components (Future Phases)
+
+#### Phase 2: GitOps & CI/CD
+- [ ] EKS Cluster for application workloads
+- [ ] ArgoCD deployment for GitOps workflows
+- [ ] GitLab integration for CI/CD pipelines
+- [ ] Deployment Agent implementation
+
+#### Phase 3: Policy & Governance
+- [ ] Policy Agent with OPA integration
+- [ ] Kyverno admission controls
+- [ ] Security scanning (Trivy, tfsec)
+- [ ] Compliance reporting
+
+#### Phase 4: Observability
+- [ ] Observability Agent implementation
+- [ ] OpenTelemetry Collector deployment
+- [ ] Grafana dashboards
+- [ ] SageMaker anomaly detection
+
+#### Phase 5: Developer Experience
+- [ ] Backstage developer portal
+- [ ] Software templates
+- [ ] Self-service workflows
+- [ ] Integration with Slack/Teams
+
+### Current Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  AWS API Gateway (HTTP API)                  │
+│                  (dev-agentic-api)                          │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│              AWS EventBridge (Custom Event Bus)              │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+         ┌───────────────┼───────────────┐
+         │               │               │
+         ▼               ▼               ▼
+    ┌─────────┐     ┌─────────┐    ┌─────────┐
+    │Planner  │     │CodeGen  │    │Remediat.│
+    │Agent    │     │Agent    │    │Agent    │
+    │(ECS)    │     │(ECS)    │    │(ECS)    │
+    │:8000    │     │:8001    │    │:8002    │
+    └────┬────┘     └────┬────┘    └────┬────┘
+         │               │               │
+         └───────────────┼───────────────┘
+                         │
+         ┌───────────────┼───────────────┐
+         │               │               │
+         ▼               ▼               ▼
+    ┌─────────┐     ┌─────────┐    ┌─────────┐
+    │DynamoDB │     │   S3    │    │Secrets  │
+    │         │     │ Buckets │    │Manager  │
+    └─────────┘     └─────────┘    └─────────┘
+```
+
+### Deployment Commands
+
+The infrastructure was deployed using these scripts:
+```bash
+# 1. Setup Terraform backend
+bash scripts/02-setup-aws-backend.sh
+
+# 2. Deploy infrastructure
+bash scripts/03-deploy-infrastructure.sh
+
+# 3. Store secrets
+aws secretsmanager put-secret-value \
+  --secret-id dev-anthropic-api-key \
+  --secret-string "your-api-key"
+
+# 4. Build and deploy containers
+bash scripts/05-deploy-agents-podman.sh
+```
+
+### Verification Commands
+
+```bash
+# Check ECS services
+aws ecs list-services --cluster dev-agentic-cluster --region us-east-1
+
+# Check API Gateway endpoint
+cd iac/terraform && terraform output api_gateway_url
+
+# Check CloudWatch logs
+aws logs tail /aws/ecs/dev-agentic-cluster --follow
+```
 
 ---
 

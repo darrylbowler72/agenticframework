@@ -1,0 +1,732 @@
+"""
+CodeGen Agent - Generates code, infrastructure, and configuration files.
+
+The CodeGen Agent (Scaffolding Agent) creates complete microservice projects
+including application code, infrastructure as code, CI/CD pipelines, and
+Kubernetes manifests.
+"""
+
+import json
+import os
+import uuid
+import base64
+from datetime import datetime
+from typing import Dict, Any, Optional
+from pathlib import Path
+from fastapi import FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+import gitlab
+import sys
+sys.path.append('../..')
+
+from common.agent_base import BaseAgent
+from common.schemas.workflow import ServiceScaffoldRequest
+
+
+app = FastAPI(
+    title="CodeGen Agent",
+    description="Generates microservice code, infrastructure, and CI/CD configurations",
+    version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class CodeGenAgent(BaseAgent):
+    """CodeGen Agent implementation."""
+
+    def __init__(self):
+        super().__init__(agent_name="codegen")
+
+        # GitLab client (will be initialized with credentials)
+        self.gitlab_client: Optional[gitlab.Gitlab] = None
+
+        # Jinja2 template environment
+        template_dir = Path(__file__).parent.parent.parent.parent / "templates"
+        self.template_env = Environment(
+            loader=FileSystemLoader(str(template_dir)),
+            autoescape=select_autoescape(['html', 'xml'])
+        )
+
+        self.logger.info("CodeGen Agent initialized")
+
+    async def _initialize_gitlab(self):
+        """Initialize GitLab client with credentials from Secrets Manager."""
+        if self.gitlab_client:
+            return
+
+        try:
+            secret = await self.get_secret("gitlab-credentials")
+            self.gitlab_client = gitlab.Gitlab(
+                url=secret.get('url', 'https://gitlab.com'),
+                private_token=secret['token']
+            )
+            self.gitlab_client.auth()
+            self.logger.info("GitLab client initialized")
+        except Exception as e:
+            self.logger.warning(f"Could not initialize GitLab client: {e}")
+            # For development, create a dummy client
+            self.gitlab_client = None
+
+    async def process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Process a code generation task."""
+        input_params = task.get('input_params', {})
+
+        # Generate microservice
+        result = await self.generate_microservice(
+            service_name=input_params['service_name'],
+            language=input_params.get('language', 'python'),
+            database=input_params.get('database', 'postgresql'),
+            api_type=input_params.get('api_type', 'rest'),
+            environment=input_params.get('environment', 'dev')
+        )
+
+        return result
+
+    async def generate_microservice(
+        self,
+        service_name: str,
+        language: str,
+        database: str,
+        api_type: str,
+        environment: str
+    ) -> Dict[str, Any]:
+        """
+        Generate complete microservice project.
+
+        Args:
+            service_name: Service name (kebab-case)
+            language: Programming language
+            database: Database type
+            api_type: API type (rest, grpc, graphql)
+            environment: Target environment
+
+        Returns:
+            Generation results including repository URL
+        """
+        self.logger.info(f"Generating {language} microservice: {service_name}")
+
+        # Initialize GitLab if needed
+        await self._initialize_gitlab()
+
+        # Generate files from templates
+        files = await self._generate_from_templates(
+            service_name=service_name,
+            language=language,
+            database=database,
+            api_type=api_type
+        )
+
+        # Use Claude to enhance generated code
+        files = await self._enhance_with_ai(files, service_name, language)
+
+        # Store artifacts in S3
+        artifact_key = f"codegen/{service_name}/{datetime.utcnow().isoformat()}"
+        await self._store_artifacts(artifact_key, files)
+
+        # Create GitLab repository and push code
+        repo_url = await self._create_and_push_repository(service_name, files)
+
+        # Generate documentation
+        readme = await self._generate_readme(service_name, language, database, api_type)
+        files['README.md'] = readme
+
+        return {
+            'service_name': service_name,
+            'repository_url': repo_url,
+            'artifact_s3_key': artifact_key,
+            'files_generated': len(files),
+            'language': language,
+            'database': database
+        }
+
+    async def _generate_from_templates(
+        self,
+        service_name: str,
+        language: str,
+        database: str,
+        api_type: str
+    ) -> Dict[str, str]:
+        """
+        Generate files from Jinja2 templates.
+
+        Args:
+            service_name: Service name
+            language: Programming language
+            database: Database type
+            api_type: API type
+
+        Returns:
+            Dictionary mapping file paths to content
+        """
+        files = {}
+
+        # Context for template rendering
+        context = {
+            'service_name': service_name,
+            'service_name_snake': service_name.replace('-', '_'),
+            'service_name_pascal': ''.join(word.capitalize() for word in service_name.split('-')),
+            'database': database,
+            'api_type': api_type,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+
+        # Generate based on language
+        if language == 'python':
+            files.update(await self._generate_python_fastapi(context))
+        elif language == 'nodejs':
+            files.update(await self._generate_nodejs_express(context))
+        elif language == 'go':
+            files.update(await self._generate_go_gin(context))
+        else:
+            raise ValueError(f"Unsupported language: {language}")
+
+        # Generate common files
+        files.update(await self._generate_common_files(context))
+
+        return files
+
+    async def _generate_python_fastapi(self, context: Dict[str, Any]) -> Dict[str, str]:
+        """Generate Python FastAPI project."""
+        service_name = context['service_name_snake']
+
+        return {
+            f'{service_name}/__init__.py': '',
+            f'{service_name}/main.py': '''"""Main FastAPI application."""
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(
+    title="{{ service_name }}",
+    description="{{ service_name }} microservice",
+    version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+async def root():
+    return {"service": "{{ service_name }}", "status": "running"}
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
+
+@app.get("/ready")
+async def ready():
+    return {"status": "ready"}
+'''.replace('{{ service_name }}', context['service_name']),
+
+            f'{service_name}/models.py': f'''"""Database models."""
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
+
+Base = declarative_base()
+
+class Item(Base):
+    """Example Item model."""
+    __tablename__ = "items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(String)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+''',
+
+            f'{service_name}/schemas.py': '''"""Pydantic schemas."""
+
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional
+
+class ItemBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_active: bool = True
+
+class ItemCreate(ItemBase):
+    pass
+
+class Item(ItemBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+''',
+
+            'requirements.txt': '''fastapi==0.109.0
+uvicorn[standard]==0.27.0
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+pydantic==2.5.3
+python-dotenv==1.0.0
+alembic==1.13.1
+''',
+
+            'Dockerfile': f'''FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY {service_name}/ /app/{service_name}/
+
+EXPOSE 8000
+
+CMD ["uvicorn", "{service_name}.main:app", "--host", "0.0.0.0", "--port", "8000"]
+''',
+        }
+
+    async def _generate_nodejs_express(self, context: Dict[str, Any]) -> Dict[str, str]:
+        """Generate Node.js Express project."""
+        return {
+            'src/index.js': '''const express = require('express');
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(express.json());
+
+app.get('/', (req, res) => {
+  res.json({ service: '{{ service_name }}', status: 'running' });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy' });
+});
+
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
+'''.replace('{{ service_name }}', context['service_name']),
+
+            'package.json': json.dumps({
+                'name': context['service_name'],
+                'version': '1.0.0',
+                'main': 'src/index.js',
+                'scripts': {
+                    'start': 'node src/index.js',
+                    'dev': 'nodemon src/index.js'
+                },
+                'dependencies': {
+                    'express': '^4.18.2',
+                    'pg': '^8.11.3'
+                },
+                'devDependencies': {
+                    'nodemon': '^3.0.2'
+                }
+            }, indent=2),
+
+            'Dockerfile': '''FROM node:18-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install --production
+
+COPY src/ ./src/
+
+EXPOSE 3000
+
+CMD ["npm", "start"]
+'''
+        }
+
+    async def _generate_go_gin(self, context: Dict[str, Any]) -> Dict[str, str]:
+        """Generate Go Gin project."""
+        return {
+            'main.go': '''package main
+
+import (
+    "github.com/gin-gonic/gin"
+)
+
+func main() {
+    r := gin.Default()
+
+    r.GET("/", func(c *gin.Context) {
+        c.JSON(200, gin.H{
+            "service": "{{ service_name }}",
+            "status":  "running",
+        })
+    })
+
+    r.GET("/health", func(c *gin.Context) {
+        c.JSON(200, gin.H{"status": "healthy"})
+    })
+
+    r.Run(":8080")
+}
+'''.replace('{{ service_name }}', context['service_name']),
+
+            'go.mod': f'''module {context['service_name']}
+
+go 1.21
+
+require github.com/gin-gonic/gin v1.9.1
+''',
+
+            'Dockerfile': '''FROM golang:1.21-alpine AS builder
+
+WORKDIR /app
+COPY . .
+RUN go build -o main .
+
+FROM alpine:latest
+WORKDIR /app
+COPY --from=builder /app/main .
+
+EXPOSE 8080
+CMD ["./main"]
+'''
+        }
+
+    async def _generate_common_files(self, context: Dict[str, Any]) -> Dict[str, str]:
+        """Generate common files (CI/CD, K8s, etc.)."""
+        service_name = context['service_name']
+
+        return {
+            '.gitignore': '''# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Node
+node_modules/
+dist/
+
+# Go
+*.exe
+*.dll
+*.so
+*.dylib
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+''',
+
+            '.gitlab-ci.yml': '''stages:
+  - test
+  - build
+  - deploy
+
+test:
+  stage: test
+  image: python:3.11
+  script:
+    - pip install -r requirements.txt
+    - pip install pytest pytest-cov
+    - pytest --cov
+
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+
+deploy:
+  stage: deploy
+  script:
+    - echo "Deploying to environment"
+  only:
+    - main
+''',
+
+            'k8s/deployment.yaml': f'''apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {service_name}
+  labels:
+    app: {service_name}
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: {service_name}
+  template:
+    metadata:
+      labels:
+        app: {service_name}
+    spec:
+      containers:
+      - name: {service_name}
+        image: {service_name}:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: {service_name}-secrets
+              key: database-url
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+''',
+
+            'k8s/service.yaml': f'''apiVersion: v1
+kind: Service
+metadata:
+  name: {service_name}
+spec:
+  selector:
+    app: {service_name}
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
+  type: ClusterIP
+''',
+
+            'docker-compose.yml': f'''version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/{service_name}
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB={service_name}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+''',
+        }
+
+    async def _enhance_with_ai(
+        self,
+        files: Dict[str, str],
+        service_name: str,
+        language: str
+    ) -> Dict[str, str]:
+        """
+        Use Claude AI to enhance generated code with best practices.
+
+        Args:
+            files: Generated files
+            service_name: Service name
+            language: Programming language
+
+        Returns:
+            Enhanced files
+        """
+        # For now, return files as-is
+        # In production, could use Claude to add better error handling,
+        # logging, documentation, etc.
+        self.logger.info("AI enhancement placeholder - returning original files")
+        return files
+
+    async def _generate_readme(
+        self,
+        service_name: str,
+        language: str,
+        database: str,
+        api_type: str
+    ) -> str:
+        """Generate README.md using Claude AI."""
+        prompt = f"""Generate a comprehensive README.md for a microservice with these specifications:
+
+Service Name: {service_name}
+Language: {language}
+Database: {database}
+API Type: {api_type}
+
+Include:
+1. Service overview
+2. Getting started (prerequisites, installation)
+3. Running locally with Docker Compose
+4. API endpoints (with examples)
+5. Environment variables
+6. Testing
+7. Deployment
+8. Contributing
+
+Use markdown formatting. Be concise but complete."""
+
+        try:
+            readme = await self.call_claude(prompt, max_tokens=2000)
+            return readme
+        except Exception as e:
+            self.logger.error(f"Error generating README: {e}")
+            # Fallback README
+            return f"""# {service_name}
+
+A {language} microservice with {database} database.
+
+## Getting Started
+
+```bash
+# Install dependencies
+docker-compose up -d
+
+# Access the service
+curl http://localhost:8000/health
+```
+
+## API Endpoints
+
+- `GET /` - Service info
+- `GET /health` - Health check
+- `GET /ready` - Readiness check
+
+## Environment Variables
+
+- `DATABASE_URL` - Database connection string
+
+## Development
+
+See documentation for more details.
+"""
+
+    async def _store_artifacts(self, key: str, files: Dict[str, str]):
+        """Store generated files in S3."""
+        try:
+            # Combine all files into a JSON structure
+            artifact = json.dumps(files, indent=2)
+
+            await self.store_artifact_s3(
+                bucket='agent-artifacts-dev',  # TODO: Make configurable
+                key=key,
+                data=artifact.encode('utf-8'),
+                metadata={
+                    'agent': 'codegen',
+                    'file_count': str(len(files))
+                }
+            )
+        except Exception as e:
+            self.logger.warning(f"Could not store artifacts in S3: {e}")
+
+    async def _create_and_push_repository(
+        self,
+        service_name: str,
+        files: Dict[str, str]
+    ) -> str:
+        """
+        Create GitLab repository and push generated code.
+
+        Args:
+            service_name: Service name
+            files: Generated files
+
+        Returns:
+            Repository URL
+        """
+        if not self.gitlab_client:
+            self.logger.warning("GitLab client not available, skipping repo creation")
+            return f"https://gitlab.com/placeholder/{service_name}"
+
+        try:
+            # Create project
+            project = self.gitlab_client.projects.create({
+                'name': service_name,
+                'description': f'Auto-generated microservice: {service_name}',
+                'visibility': 'private',
+                'initialize_with_readme': False
+            })
+
+            # Push files to repository
+            for file_path, content in files.items():
+                project.files.create({
+                    'file_path': file_path,
+                    'branch': 'main',
+                    'content': content,
+                    'commit_message': f'Add {file_path}'
+                })
+
+            self.logger.info(f"Created repository: {project.web_url}")
+            return project.web_url
+
+        except Exception as e:
+            self.logger.error(f"Error creating GitLab repository: {e}")
+            return f"https://gitlab.com/placeholder/{service_name}"
+
+
+# Initialize agent
+codegen_agent = CodeGenAgent()
+
+
+@app.post("/generate")
+async def generate_microservice(request: ServiceScaffoldRequest):
+    """Generate a new microservice."""
+    try:
+        result = await codegen_agent.generate_microservice(
+            service_name=request.service_name,
+            language=request.language,
+            database=request.database,
+            api_type=request.api_type,
+            environment=request.environment
+        )
+        return result
+    except Exception as e:
+        codegen_agent.logger.error(f"Error generating microservice: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "agent": "codegen",
+        "version": "1.0.0"
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
