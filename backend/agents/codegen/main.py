@@ -676,20 +676,19 @@ See documentation for more details.
                 auto_init=False  # Don't auto-create README
             )
 
-            # Create initial commit with all files
-            # GitHub API requires all files to be committed at once for initial commit
-            file_list = []
+            # Create blobs for all files
+            blobs = []
             for file_path, content in files.items():
-                # Create InputGitTreeElement for each file
-                file_list.append({
+                blob = repo.create_git_blob(content, "utf-8")
+                blobs.append({
                     "path": file_path,
                     "mode": "100644",
                     "type": "blob",
-                    "content": content
+                    "sha": blob.sha
                 })
 
-            # Create tree
-            tree = repo.create_git_tree(file_list)
+            # Create tree with all blobs
+            tree = repo.create_git_tree(blobs)
 
             # Create commit
             commit = repo.create_git_commit(
@@ -697,13 +696,8 @@ See documentation for more details.
                 tree=tree
             )
 
-            # Update main branch reference
-            try:
-                ref = repo.get_git_ref("heads/main")
-                ref.edit(commit.sha)
-            except:
-                # If main doesn't exist, create it
-                repo.create_git_ref("refs/heads/main", commit.sha)
+            # Create main branch reference
+            repo.create_git_ref("refs/heads/main", commit.sha)
 
             self.logger.info(f"Created repository: {repo.html_url}")
             return repo.html_url
