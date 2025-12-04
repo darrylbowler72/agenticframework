@@ -1,139 +1,55 @@
 # DevOps Agentic Framework
 
-## Overview
-The **DevOps Agentic Framework** provides an autonomous, AI-driven platform that accelerates software delivery by integrating multi-agent automation, GitOps workflows, policy enforcement, and developer experience tooling.
+An autonomous, AI-powered DevOps platform that accelerates software delivery through intelligent multi-agent automation, GitOps workflows, and enhanced developer experience.
 
 ## Current Status
-**✅ FULLY OPERATIONAL - API GATEWAY INTEGRATED**
 
-The framework is now fully deployed and accessible via public API Gateway endpoints!
+**✅ FULLY OPERATIONAL**
 
-### Active Services
-- **3 AI Agent Services** running on AWS ECS Fargate (accessible via API Gateway):
-  - Planner Agent (port 8000) - Orchestrates multi-step workflows
-  - CodeGen Agent (port 8001) - Generates code and infrastructure templates
-  - Remediation Agent (port 8002) - Automatically fixes detected issues
+The framework is deployed and accessible via public API Gateway with a conversational chatbot interface!
 
-- **API Gateway**: `https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev`
-  - POST /workflows - Create workflows
-  - POST /generate - Generate microservices
-  - POST /remediate - Auto-fix issues
-  - GET /*/health - Health checks
+### Live Services
 
-- **Infrastructure Components**:
-  - Application Load Balancer (internal) routing to ECS services
-  - VPC Link connecting API Gateway to private ALB
-  - DynamoDB tables for workflow and deployment state
-  - S3 buckets for artifacts, templates, and policy bundles
-  - EventBridge for event-driven agent communication
-  - CloudWatch for logging and monitoring
-  - Secrets Manager for secure credential storage
+**Public Chatbot Interface**:
+- **URL**: https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/
+- **Features**: Natural language interface for all DevOps operations
+- **Capabilities**: Create workflows, generate code, remediate issues, get help
 
-## Key Capabilities
-- **AI Scaffolding** – Generates repos, microservice templates, IaC, CI/CD, and manifests automatically.
-- **Multi-Agent System** – Planner, CodeGen, and Remediation agents powered by Claude AI.
-- **GitOps Delivery** – Declarative deployments with ArgoCD (planned).
-- **Policy Automation** – OPA and Kyverno-backed governance and compliance checks (planned).
-- **Observability Intelligence** – OTel-driven anomaly detection and operational summaries (planned).
-- **Developer Experience Hub** – Backstage integration for unified workflows (planned).
+**API Gateway**: `https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev`
+- POST /workflows - Create workflows
+- POST /generate - Generate microservices
+- POST /remediate - Auto-fix issues
+- POST /chat - Chat with AI assistant
+- GET /*/health - Health checks
 
-## AWS Architecture Components
+**AI Agents Running** (4 agents on AWS ECS Fargate):
+1. **Planner Agent** (port 8000) - Orchestrates multi-step workflows
+2. **CodeGen Agent** (port 8001) - Generates code and infrastructure
+3. **Remediation Agent** (port 8002) - Auto-fixes detected issues
+4. **Chatbot Agent** (port 8003) - Conversational DevOps interface
 
-### Deployed Infrastructure
-- **Compute**: ECS Fargate cluster running 3 agent services
-- **Messaging**: AWS EventBridge for event-driven orchestration
-- **Storage**:
-  - S3: Agent artifacts, codegen templates, policy bundles, Terraform state
-  - DynamoDB: Workflows, deployments, policy violations
-- **Integration**: API Gateway HTTP API for agent endpoints
-- **Security**: AWS Secrets Manager for API keys and credentials
-- **Monitoring**: CloudWatch Logs and metrics
+**Infrastructure** (90+ AWS resources deployed):
+- Application Load Balancer routing to ECS services
+- VPC with public/private subnets across 2 AZs
+- DynamoDB tables for state management
+- S3 buckets for artifacts and templates
+- EventBridge for event-driven communication
+- Secrets Manager for secure credentials
 
-### Planned Components
-- **EKS**: Kubernetes cluster for application workloads
-- **GitLab Integration**: CI/CD pipeline orchestration
-- **ArgoCD**: GitOps-based deployment automation
-- **Backstage**: Developer portal and service catalog
+## Quick Start
 
-## Project Structure
-```
-/backend/agents      # AI agent implementations (Python)
-  /planner          # Workflow orchestration agent
-  /codegen          # Code generation agent
-  /remediation      # Auto-remediation agent
-/iac                # Infrastructure as Code
-  /terraform        # AWS infrastructure modules
-    /modules        # Reusable Terraform modules
-    /environments   # Environment-specific configs
-/scripts            # Deployment automation scripts
-/docs               # Documentation
-/user-stories       # Product requirements
-```
+### Try the Chatbot (Easiest Way)
 
-## Getting Started
+1. **Open in Browser**: https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/
 
-### Prerequisites
-- AWS Account with appropriate permissions
-- AWS CLI configured
-- Terraform >= 1.0
-- Podman or Docker
-- Anthropic API key
+2. **Ask Questions**:
+   - "Create a new Python microservice"
+   - "Help me plan a deployment workflow"
+   - "Generate a REST API with PostgreSQL"
 
-### Quick Deploy
-The framework includes automated deployment scripts:
+### Use the API Directly
 
-1. **Configure AWS Credentials**
-   ```bash
-   # Copy example environment file
-   cp .env.example .env
-
-   # Edit .env with your AWS credentials and Anthropic API key
-   ```
-
-2. **Set Up Terraform Backend**
-   ```bash
-   bash scripts/02-setup-aws-backend.sh
-   ```
-
-3. **Deploy Infrastructure**
-   ```bash
-   bash scripts/03-deploy-infrastructure.sh
-   ```
-
-4. **Store API Secrets**
-   ```bash
-   # Store your Anthropic API key in AWS Secrets Manager
-   aws secretsmanager put-secret-value \
-     --secret-id dev-anthropic-api-key \
-     --secret-string "your-api-key-here"
-   ```
-
-5. **Build and Deploy Agent Containers**
-   ```bash
-   bash scripts/05-deploy-agents-podman.sh
-   ```
-
-### Verify Deployment
-Check that all services are running:
-```bash
-aws ecs list-services --cluster dev-agentic-cluster --region us-east-1
-```
-
-### Access API Gateway
-Get your API Gateway endpoint:
-```bash
-cd iac/terraform
-terraform output api_gateway_url
-```
-
-## Quick Start - Try It Now!
-
-### Test Health Endpoints
-```bash
-curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/planner/health
-```
-
-### Create a Workflow
+#### Create a Workflow
 ```bash
 curl -X POST https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/workflows \
   -H "Content-Type: application/json" \
@@ -149,7 +65,7 @@ curl -X POST https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/workflow
   }'
 ```
 
-### Generate Microservice Code
+#### Generate Microservice Code
 ```bash
 curl -X POST https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/generate \
   -H "Content-Type: application/json" \
@@ -157,41 +73,259 @@ curl -X POST https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/generate
     "service_name": "payment-service",
     "language": "python",
     "database": "postgresql",
-    "api_type": "rest",
-    "environment": "dev"
+    "api_type": "rest"
   }'
 ```
 
-## Example Workflow
-1. Developer sends request to API Gateway endpoint
-2. API Gateway routes through VPC Link to internal ALB
-3. ALB forwards to appropriate ECS service
-4. Planner Agent receives request and decomposes into tasks
-5. Tasks published to EventBridge
-6. Specialized agents (CodeGen, Remediation) process their tasks
-7. Results stored in DynamoDB and S3
-8. Workflow status available via API
+#### Check Health
+```bash
+curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/planner/health
+```
+
+## Key Capabilities
+
+- **AI Scaffolding**: Generates repos, microservices, IaC, CI/CD pipelines automatically
+- **Multi-Agent System**: Specialized agents powered by Claude AI work together
+- **Conversational Interface**: Natural language chatbot for DevOps operations
+- **Event-Driven**: EventBridge-based asynchronous task orchestration
+- **GitOps Ready**: Designed for ArgoCD integration (planned)
+- **Policy Automation**: OPA-based governance (planned)
+- **Observability**: OpenTelemetry integration (planned)
+
+## Project Structure
+
+```
+/backend/agents          # AI agent implementations (Python)
+  /planner              # Workflow orchestration
+  /codegen              # Code generation
+  /remediation          # Auto-remediation
+  /chatbot              # Conversational interface
+  /common               # Shared utilities
+/iac                    # Infrastructure as Code
+  /terraform            # AWS infrastructure
+    /modules            # Reusable Terraform modules
+    /environments       # Environment configs
+/scripts                # Deployment automation
+/user-stories           # Product requirements
+```
+
+## Architecture
+
+### High-Level Flow
+
+```
+User → Chatbot/API Gateway → VPC Link → ALB → ECS Agents
+                                              ↓
+                                    EventBridge + DynamoDB + S3
+```
+
+### Components
+
+**Compute**:
+- ECS Fargate cluster with 4 agent services
+- Auto-scaling based on CPU/memory
+
+**Storage**:
+- DynamoDB: Workflow state, sessions
+- S3: Generated code, templates, artifacts
+
+**Integration**:
+- API Gateway HTTP API (public)
+- Application Load Balancer (internal)
+- VPC Link (secure connection)
+- EventBridge (event-driven messaging)
+
+**Security**:
+- Private subnets for all agents
+- Secrets Manager for API keys
+- IAM roles with minimal permissions
+
+## Deployment
+
+### Prerequisites
+- AWS Account with appropriate permissions
+- AWS CLI configured
+- Terraform >= 1.0
+- Podman or Docker
+- Anthropic API key
+
+### Deploy Infrastructure
+
+1. **Configure AWS Credentials**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your AWS credentials and API key
+   ```
+
+2. **Setup Terraform Backend**
+   ```bash
+   bash scripts/02-setup-aws-backend.sh
+   ```
+
+3. **Deploy Infrastructure**
+   ```bash
+   bash scripts/03-deploy-infrastructure.sh
+   ```
+
+4. **Store API Secret**
+   ```bash
+   aws secretsmanager put-secret-value \
+     --secret-id dev-anthropic-api-key \
+     --secret-string '{"api_key":"your-api-key"}'
+   ```
+
+5. **Build and Deploy Agents**
+   ```bash
+   bash scripts/05-deploy-agents-podman.sh
+   ```
+
+### Verify Deployment
+
+```bash
+# Check ECS services
+aws ecs list-services --cluster dev-agentic-cluster --region us-east-1
+
+# Get API Gateway URL
+cd iac/terraform && terraform output api_gateway_url
+
+# Test chatbot
+curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/health
+```
+
+## Local Development
+
+Run the chatbot locally for development:
+
+```bash
+# Install dependencies
+cd backend
+pip install fastapi uvicorn pydantic boto3 anthropic httpx
+
+# Set environment variable
+export ENVIRONMENT=dev
+
+# Run chatbot server
+python -m uvicorn agents.chatbot.main:app --host 0.0.0.0 --port 8003 --reload
+```
+
+Access at: http://localhost:8003
+
+## Monitoring
+
+### View Logs
+```bash
+# All agent logs
+aws logs tail /aws/ecs/dev-agentic-cluster --follow
+
+# Specific agent
+aws logs tail /aws/ecs/dev-agentic-cluster --follow --filter-pattern planner
+
+# API Gateway logs
+aws logs tail /aws/apigateway/dev-agentic-api --follow
+```
+
+### Check Service Status
+```bash
+# ECS services
+aws ecs describe-services \
+  --cluster dev-agentic-cluster \
+  --services dev-planner-agent dev-codegen-agent dev-remediation-agent dev-chatbot-agent \
+  --region us-east-1
+
+# ALB target health
+aws elbv2 describe-target-health \
+  --target-group-arn <target-group-arn>
+```
+
+### DynamoDB Data
+```bash
+# List workflows
+aws dynamodb scan --table-name dev-workflows --region us-east-1
+
+# List chat sessions
+aws dynamodb scan --table-name dev-chatbot-sessions --region us-east-1
+```
+
+## Cost Estimate
+
+Monthly cost for current deployment (24/7):
+
+| Service | Cost |
+|---------|------|
+| ECS Fargate (4 tasks) | ~$45-60 |
+| Application Load Balancer | ~$20-25 |
+| API Gateway | ~$3-5 |
+| VPC (NAT Gateways) | ~$100-120 |
+| DynamoDB | ~$5-10 |
+| S3 + CloudWatch | ~$5-10 |
+| **Total** | **~$180-230/month** |
+
+## Troubleshooting
+
+### Can't reach API Gateway
+```bash
+curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/health
+```
+Expected: JSON with `"status": "healthy"`
+
+### Agents not responding
+```bash
+# Check ECS service status
+aws ecs describe-services \
+  --cluster dev-agentic-cluster \
+  --services dev-chatbot-agent \
+  --region us-east-1
+```
+
+### ALB health checks failing
+```bash
+# Check target health
+aws elbv2 describe-target-health \
+  --target-group-arn <arn>
+```
+
+### Claude API errors
+```bash
+# Verify API key
+aws secretsmanager get-secret-value \
+  --secret-id dev-anthropic-api-key \
+  --region us-east-1
+```
+
+## What's Next
+
+### Immediate
+- Configure custom domain for API Gateway
+- Add authentication (AWS IAM or JWT)
+- Set up CloudWatch alarms
+
+### Short Term
+- GitLab integration for repository creation
+- ArgoCD for GitOps deployments
+- Policy Agent with OPA rules
+
+### Long Term
+- Multi-environment setup (staging, production)
+- Backstage developer portal
+- Observability Agent with OpenTelemetry
+- Advanced AI features and custom agents
 
 ## Documentation
-- [Architecture Documentation](./architecture.md) - Detailed system architecture
-- [Deployment Guide](./DEPLOYMENT.md) - Step-by-step deployment instructions
-- [User Stories](./user-stories/README.md) - Product requirements and use cases
 
-## Current Deployment
-**Environment**: Development
-**Region**: us-east-1
-**Infrastructure**: 70+ AWS resources deployed via Terraform
-**Agents**: 3 ECS services running on Fargate
+- [Architecture Documentation](./architecture.md) - Detailed technical architecture
+- User Stories: See `/user-stories` directory for requirements
 
-## Next Steps
-1. Configure GitLab integration for CI/CD
-2. Deploy ArgoCD for GitOps workflows
-3. Set up Backstage developer portal
-4. Implement Policy Agent with OPA
-5. Add Observability Agent with OpenTelemetry
+## Support
 
-## Contributing
-Issues and PRs are welcome.
+- **Issues**: https://github.com/darrylbowler72/agenticframework/issues
+- **Discussions**: GitHub Discussions for Q&A
 
 ## License
+
 MIT License
+
+---
+
+**Current Deployment**: Development environment (us-east-1)
+**Infrastructure**: 90+ AWS resources managed by Terraform
+**Status**: Operational and ready for use

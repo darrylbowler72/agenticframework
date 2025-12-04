@@ -41,7 +41,7 @@ app.add_middleware(
 # Mount static files
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    app.mount("/dev/static", StaticFiles(directory=static_dir), name="static")
 
 
 class ChatMessage(BaseModel):
@@ -70,6 +70,7 @@ class ChatbotAgent(BaseAgent):
 
     def __init__(self):
         super().__init__(agent_name="chatbot")
+        self.environment = os.getenv('ENVIRONMENT', 'dev')
         self.sessions_table = self.dynamodb.Table(f'{self.environment}-chatbot-sessions')
 
         # Internal API endpoints for agents
@@ -170,7 +171,7 @@ Analyze the intent and provide your response in JSON format."""
             return {
                 "intent": "general",
                 "action_needed": False,
-                "response": response
+                "response": response if 'response' in locals() else "I received an unexpected response format."
             }
         except Exception as e:
             self.logger.error(f"Error analyzing intent: {e}")
@@ -217,6 +218,9 @@ Analyze the intent and provide your response in JSON format."""
                         }
                     )
                     return response.json()
+
+                else:
+                    return {"info": f"Intent '{intent}' does not require backend agent execution"}
 
         except Exception as e:
             self.logger.error(f"Error executing action: {e}")
@@ -308,6 +312,7 @@ async def get_chat_interface():
 
 
 @app.get("/dev", response_class=HTMLResponse)
+@app.get("/dev/", response_class=HTMLResponse)
 async def get_chat_interface_dev():
     """Serve the chat interface (dev route)."""
     return await get_chat_interface()

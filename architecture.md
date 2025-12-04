@@ -21,7 +21,9 @@
 
 ### Deployed Components (Phase 1)
 
-**Infrastructure Status**: ✅ **FULLY DEPLOYED**
+**Infrastructure Status**: ✅ **FULLY DEPLOYED AND OPERATIONAL**
+
+**Public Access**: https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/
 
 #### ECS Fargate Services (Running)
 - **Planner Agent** - `dev-planner-agent` service
@@ -29,31 +31,48 @@
   - Port: 8000
   - Resources: 512 CPU / 1024 MB Memory
   - Health Check: HTTP `/health` endpoint
+  - Status: ✅ Active (1/1 running)
 
 - **CodeGen Agent** - `dev-codegen-agent` service
   - Container: `773550624765.dkr.ecr.us-east-1.amazonaws.com/codegen-agent:latest`
   - Port: 8001
   - Resources: 512 CPU / 1024 MB Memory
   - Health Check: HTTP `/health` endpoint
+  - Status: ✅ Active (1/1 running)
 
 - **Remediation Agent** - `dev-remediation-agent` service
   - Container: `773550624765.dkr.ecr.us-east-1.amazonaws.com/remediation-agent:latest`
   - Port: 8002
   - Resources: 512 CPU / 1024 MB Memory
   - Health Check: HTTP `/health` endpoint
+  - Status: ✅ Active (1/1 running)
+
+- **Chatbot Agent** - `dev-chatbot-agent` service
+  - Container: `773550624765.dkr.ecr.us-east-1.amazonaws.com/chatbot-agent:latest`
+  - Port: 8003
+  - Resources: 512 CPU / 1024 MB Memory
+  - Health Check: HTTP `/health` endpoint
+  - Status: ✅ Active (1/1 running)
+  - **Public Interface**: Accessible via API Gateway at root path (`/`)
 
 #### AWS Infrastructure (Deployed)
 - **VPC**: Custom VPC with public/private subnets across 2 AZs
-- **API Gateway**: HTTP API for agent orchestration
+- **API Gateway**: HTTP API for agent orchestration (publicly accessible)
+  - Base URL: `https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev`
+  - Routes: POST /workflows, POST /generate, POST /remediate, POST /chat, GET /*, GET /static/*
+- **Application Load Balancer**: Internal ALB routing to ECS services
+  - 4 target groups (planner, codegen, remediation, chatbot)
+  - Health checks configured for all services
+- **VPC Link**: Connects API Gateway (public) to ALB (private VPC)
 - **EventBridge**: Custom event bus for agent communication
-- **DynamoDB**: 3 tables (workflows, deployments, policy-violations)
-- **S3**: 3 buckets (artifacts, templates, policy-bundles)
+- **DynamoDB**: 4 tables (workflows, deployments, policy-violations, chatbot-sessions)
+- **S3**: 4 buckets (artifacts, templates, policy-bundles, terraform-state)
 - **Secrets Manager**: 3 secrets (Anthropic API key, GitLab credentials, Slack credentials)
 - **CloudWatch**: Log groups for agents and API Gateway
-- **ECS Cluster**: Fargate cluster `dev-agentic-cluster`
-- **ECR**: 3 container repositories for agent images
+- **ECS Cluster**: Fargate cluster `dev-agentic-cluster` with 4 services
+- **ECR**: 4 container repositories for agent images
 - **IAM**: Task execution and task roles with appropriate permissions
-- **Security Groups**: ECS tasks security group with VPC-level access
+- **Security Groups**: ECS tasks, ALB, and VPC Link security groups
 
 #### Total Resources Deployed
 - **70+ AWS Resources** managed by Terraform
@@ -90,35 +109,39 @@
 ### Current Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                  AWS API Gateway (HTTP API)                  │
-│                  (dev-agentic-api)                          │
-└────────────────────────┬────────────────────────────────────┘
-                         │
+                         Internet
+                             │
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│           AWS API Gateway (HTTP API) - Public                │
+│   https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com    │
+│   - POST /workflows  - POST /generate  - POST /remediate    │
+│   - POST /chat       - GET /*          - GET /static/*      │
+└────────────────────────┬─────────────────────────────────────┘
+                         │ VPC Link
                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│              AWS EventBridge (Custom Event Bus)              │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-         ┌───────────────┼───────────────┐
-         │               │               │
-         ▼               ▼               ▼
-    ┌─────────┐     ┌─────────┐    ┌─────────┐
-    │Planner  │     │CodeGen  │    │Remediat.│
-    │Agent    │     │Agent    │    │Agent    │
-    │(ECS)    │     │(ECS)    │    │(ECS)    │
-    │:8000    │     │:8001    │    │:8002    │
-    └────┬────┘     └────┬────┘    └────┬────┘
-         │               │               │
-         └───────────────┼───────────────┘
-                         │
-         ┌───────────────┼───────────────┐
-         │               │               │
-         ▼               ▼               ▼
-    ┌─────────┐     ┌─────────┐    ┌─────────┐
-    │DynamoDB │     │   S3    │    │Secrets  │
-    │         │     │ Buckets │    │Manager  │
-    └─────────┘     └─────────┘    └─────────┘
+┌──────────────────────────────────────────────────────────────┐
+│        Application Load Balancer (Internal/Private)          │
+│        - 4 Target Groups with health checks                  │
+└────────────┬────────────┬────────────┬────────────┬──────────┘
+             │            │            │            │
+             ▼            ▼            ▼            ▼
+        ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐
+        │Planner │  │CodeGen │  │Remediat│  │Chatbot │
+        │Agent   │  │Agent   │  │Agent   │  │Agent   │
+        │(ECS)   │  │(ECS)   │  │(ECS)   │  │(ECS)   │
+        │:8000   │  │:8001   │  │:8002   │  │:8003   │
+        └────┬───┘  └────┬───┘  └────┬───┘  └────┬───┘
+             │           │           │           │
+             └───────────┼───────────┼───────────┘
+                         │           │
+         ┌───────────────┼───────────┼───────────────┐
+         │               │           │               │
+         ▼               ▼           ▼               ▼
+    ┌─────────┐     ┌─────────┐  ┌────────┐   ┌─────────┐
+    │DynamoDB │     │   S3    │  │EventBus│   │Secrets  │
+    │4 Tables │     │4 Buckets│  │        │   │Manager  │
+    └─────────┘     └─────────┘  └────────┘   └─────────┘
 ```
 
 ### Deployment Commands
@@ -381,7 +404,41 @@ Output:
 - **Assisted**: Requires human approval via Backstage UI
 - **Advisory**: Recommendations without auto-execution
 
-#### 6. Observability Agent
+#### 6. Chatbot Agent (✅ Deployed)
+**Purpose**: Provides a conversational interface for interacting with all DevOps automation capabilities through natural language.
+
+**Responsibilities**:
+- Interpret natural language requests from users
+- Route commands to appropriate specialized agents
+- Maintain conversation context and session state
+- Provide friendly, helpful responses with action summaries
+- Support multi-turn conversations for complex workflows
+
+**Technology Stack**:
+- Runtime: ECS Fargate (persistent service)
+- AI Model: Claude API for intent analysis and conversational responses
+- Storage: DynamoDB for chat session management
+- Web Interface: FastAPI with HTML/CSS/JS frontend
+- Integration: HTTP client (httpx) to call other agent APIs
+
+**Key Features**:
+- **Intent Analysis**: Uses Claude to understand user requests
+- **Multi-Agent Orchestration**: Can trigger workflows, code generation, or remediation
+- **Session Management**: Persists conversation history in DynamoDB
+- **Web UI**: Accessible via browser at API Gateway root path
+- **API Endpoints**:
+  - POST /chat - Send messages
+  - GET /session/{id} - Retrieve history
+  - GET / - Serve web interface
+  - GET /static/* - Serve CSS/JS assets
+
+**Example Interactions**:
+- "Create a new Python microservice with PostgreSQL"
+- "Help me fix the failing CI/CD pipeline"
+- "Generate a REST API with authentication"
+- "What DevOps best practices should I follow?"
+
+#### 7. Observability Agent (Planned)
 **Purpose**: Analyzes telemetry data and provides intelligent insights into system health.
 
 **Responsibilities**:

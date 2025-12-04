@@ -66,6 +66,7 @@ module "api_gateway" {
   vpc_id                 = module.vpc.vpc_id
   private_subnet_ids     = module.vpc.private_subnet_ids
   alb_listener_arn       = module.ecs.alb_listener_arn
+  alb_dns_name           = module.ecs.alb_dns_name
   alb_security_group_id  = module.ecs.alb_security_group_id
 
   depends_on = [module.ecs]

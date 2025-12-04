@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevOps at Your Service</title>
+    <link rel="stylesheet" href="/dev/static/style.css">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <div class="header-content">
+                <h1>DevOps at Your Service</h1>
+                <p>AI-powered DevOps automation assistant</p>
+            </div>
+            <button class="new-chat-btn" onclick="newChat()">New Chat</button>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="welcome-message">
+                <h2>👋 Welcome!</h2>
+                <p>I'm your DevOps assistant. I can help you with:</p>
+                <ul>
+                    <li>📋 <strong>Create Workflows</strong> - Plan and organize your DevOps tasks</li>
+                    <li>💻 <strong>Generate Code</strong> - Create microservices, infrastructure, and pipelines</li>
+                    <li>🔧 <strong>Fix Issues</strong> - Remediate CI/CD pipeline failures</li>
+                    <li>💡 <strong>Get Help</strong> - Ask questions about DevOps best practices</li>
+                </ul>
+                <p class="try-asking">Try asking: "Create a new Python microservice" or "Help me plan a deployment workflow"</p>
+            </div>
+        </div>
+
+        <div id="typingIndicator" class="typing-indicator" style="display: none;">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+
+        <div class="chat-input-container">
+            <div class="input-wrapper">
+                <textarea
+                    id="userInput"
+                    placeholder="Type your message here..."
+                    rows="1"
+                    onkeypress="handleKeyPress(event)"
+                ></textarea>
+                <button id="sendBtn" onclick="sendMessage()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/dev/static/script.js"></script>
+</body>
+</html>

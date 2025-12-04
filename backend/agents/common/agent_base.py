@@ -141,7 +141,7 @@ class BaseAgent(ABC):
             client = await self._get_anthropic_client()
 
             kwargs = {
-                'model': 'claude-3-5-sonnet-20241022',
+                'model': 'claude-3-haiku-20240307',
                 'max_tokens': max_tokens,
                 'temperature': temperature,
                 'messages': [{'role': 'user', 'content': prompt}]
