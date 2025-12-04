@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy common modules and requirements
+COPY agents/common/ /app/common/
+COPY agents/common/requirements.txt /app/requirements.txt
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir httpx==0.27.0
+
+# Copy chatbot agent
+COPY agents/chatbot/ /app/chatbot/
+
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Expose port
+EXPOSE 8003
+
+# Run the agent
+CMD ["uvicorn", "chatbot.main:app", "--host", "0.0.0.0", "--port", "8003"]
