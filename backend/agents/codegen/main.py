@@ -693,7 +693,7 @@ See documentation for more details.
                 })
 
             # Create tree based on the latest commit
-            tree = repo.create_git_tree(blobs, base_tree=latest_commit.tree)
+            tree = repo.create_git_tree(blobs, base_tree=latest_commit.tree.sha)
 
             # Create commit on top of initial commit
             commit = repo.create_git_commit(
