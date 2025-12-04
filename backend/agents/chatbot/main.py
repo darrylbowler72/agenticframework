@@ -347,6 +347,8 @@ async def get_session(session_id: str):
 
 @app.get("/health")
 @app.get("/dev/health")
+@app.get("/chatbot/health")
+@app.get("/dev/chatbot/health")
 async def health_check():
     """Health check endpoint."""
     return {
