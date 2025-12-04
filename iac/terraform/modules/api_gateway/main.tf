@@ -108,3 +108,34 @@ resource "aws_apigatewayv2_route" "remediation_health" {
   route_key = "GET /remediation/health"
   target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
 }
+
+# Routes for Chatbot Agent
+resource "aws_apigatewayv2_route" "chatbot_root" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "chatbot_static" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /static/{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "chatbot_chat_post" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /chat"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "chatbot_session" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /session/{session_id}"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "chatbot_health" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /chatbot/health"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
