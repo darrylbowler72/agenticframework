@@ -13,7 +13,8 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-import gitlab
+from github import Github
+from github.GithubException import GithubException
 import sys
 sys.path.append('../..')
 
@@ -40,7 +41,8 @@ class RemediationAgent(BaseAgent):
 
     def __init__(self):
         super().__init__(agent_name="remediation")
-        self.gitlab_client: Optional[gitlab.Gitlab] = None
+        self.github_client: Optional[Github] = None
+        self.github_owner: Optional[str] = None
         self.playbooks_table = None
         self.actions_table = None
         self._initialize_tables()
@@ -54,21 +56,16 @@ class RemediationAgent(BaseAgent):
         except Exception as e:
             self.logger.warning(f"Could not initialize DynamoDB tables: {e}")
 
-    async def _initialize_gitlab(self):
-        """Initialize GitLab client."""
-        if self.gitlab_client:
+    async def _initialize_github(self):
+        """Initialize GitHub client."""
+        if self.github_client:
             return
 
         try:
-            secret = await self.get_secret("gitlab-credentials")
-            self.gitlab_client = gitlab.Gitlab(
-                url=secret.get('url', 'https://gitlab.com'),
-                private_token=secret['token']
-            )
-            self.gitlab_client.auth()
-            self.logger.info("GitLab client initialized")
+            self.github_client, self.github_owner = await self._get_github_client()
+            self.logger.info(f"GitHub client initialized for owner: {self.github_owner}")
         except Exception as e:
-            self.logger.warning(f"Could not initialize GitLab client: {e}")
+            self.logger.warning(f"Could not initialize GitHub client: {e}")
 
     async def process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Process a remediation task."""
@@ -89,7 +86,7 @@ class RemediationAgent(BaseAgent):
 
         self.logger.info(f"Handling pipeline failure: {pipeline_id} in project {project_id}")
 
-        await self._initialize_gitlab()
+        await self._initialize_github()
 
         # Fetch pipeline logs
         logs = await self._fetch_pipeline_logs(pipeline_id, project_id)
@@ -121,39 +118,59 @@ class RemediationAgent(BaseAgent):
 
         return result
 
-    async def _fetch_pipeline_logs(self, pipeline_id: int, project_id: int) -> str:
+    async def _fetch_pipeline_logs(self, pipeline_id: int, project_id: str) -> str:
         """
-        Fetch pipeline logs from GitLab.
+        Fetch pipeline logs from GitHub Actions.
 
         Args:
-            pipeline_id: Pipeline ID
-            project_id: Project ID
+            pipeline_id: Workflow run ID
+            project_id: Repository name (e.g., 'myrepo' or 'owner/myrepo')
 
         Returns:
             Combined log text
         """
-        if not self.gitlab_client:
+        if not self.github_client:
             return "Sample error logs: ModuleNotFoundError: No module named 'requests'"
 
         try:
-            project = self.gitlab_client.projects.get(project_id)
-            pipeline = project.pipelines.get(pipeline_id)
-            jobs = pipeline.jobs.list()
+            # Get repository (handle both "repo" and "owner/repo" formats)
+            if '/' in str(project_id):
+                repo = self.github_client.get_repo(project_id)
+            else:
+                repo = self.github_client.get_repo(f"{self.github_owner}/{project_id}")
+
+            # Get workflow run
+            run = repo.get_workflow_run(pipeline_id)
+
+            # Get jobs for this run
+            jobs = run.jobs()
 
             logs = []
             for job in jobs:
-                if job.status == 'failed':
+                if job.conclusion == 'failure':
                     try:
-                        log = job.trace().decode('utf-8')
-                        logs.append(f"=== Job: {job.name} ===\n{log}\n")
-                    except:
-                        pass
+                        # GitHub API returns logs as downloadable content
+                        # For now, we'll use job steps information
+                        steps_info = []
+                        for step in job.steps:
+                            if step.conclusion == 'failure':
+                                steps_info.append(f"Step '{step.name}' failed")
 
-            return "\n".join(logs)
+                        job_log = f"=== Job: {job.name} ===\n"
+                        job_log += f"Status: {job.status}, Conclusion: {job.conclusion}\n"
+                        job_log += "\n".join(steps_info)
+                        logs.append(job_log + "\n")
+                    except Exception as step_error:
+                        self.logger.warning(f"Error fetching job steps: {step_error}")
 
+            return "\n".join(logs) if logs else "No detailed failure logs available"
+
+        except GithubException as e:
+            self.logger.error(f"GitHub API error fetching pipeline logs: {e}")
+            return f"Error accessing GitHub: {e.data.get('message', str(e))}"
         except Exception as e:
             self.logger.error(f"Error fetching pipeline logs: {e}")
-            return ""
+            return f"Error: {str(e)}"
 
     async def _analyze_failure(self, logs: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -466,21 +483,25 @@ Output valid JSON only:
 remediation_agent = RemediationAgent()
 
 
-@app.post("/webhooks/gitlab/pipeline")
-@app.post("/dev/webhooks/gitlab/pipeline")
-async def handle_pipeline_webhook(request: Request):
-    """Receive pipeline failure events from GitLab."""
+@app.post("/webhooks/github/workflow")
+@app.post("/dev/webhooks/github/workflow")
+async def handle_workflow_webhook(request: Request):
+    """Receive workflow failure events from GitHub Actions."""
     payload = await request.json()
 
-    if payload.get('object_attributes', {}).get('status') == 'failed':
+    # GitHub Actions webhook for workflow_run event
+    if payload.get('action') in ['completed'] and payload.get('workflow_run', {}).get('conclusion') == 'failure':
+        workflow_run = payload['workflow_run']
+        repository = payload['repository']
+
         # Publish to EventBridge for async processing
         await remediation_agent.publish_event(
-            event_type='pipeline.failed',
+            detail_type='pipeline.failed',
             detail={
-                'pipeline_id': payload['object_attributes']['id'],
-                'project_id': payload['project']['id'],
-                'ref': payload['object_attributes']['ref'],
-                'status': payload['object_attributes']['status']
+                'pipeline_id': workflow_run['id'],
+                'project_id': repository['full_name'],  # e.g., "darrylbowler72/myrepo"
+                'ref': workflow_run['head_branch'],
+                'status': workflow_run['conclusion']
             }
         )
 
@@ -489,8 +510,13 @@ async def handle_pipeline_webhook(request: Request):
 
 @app.post("/remediate")
 @app.post("/dev/remediate")
-async def trigger_remediation(pipeline_id: int, project_id: int):
-    """Manually trigger remediation for a pipeline."""
+async def trigger_remediation(pipeline_id: int, project_id: str):
+    """Manually trigger remediation for a failed workflow/pipeline.
+
+    Args:
+        pipeline_id: GitHub Actions workflow run ID
+        project_id: Repository name (e.g., 'myrepo' or 'darrylbowler72/myrepo')
+    """
     try:
         result = await remediation_agent.handle_pipeline_failure({
             'pipeline_id': pipeline_id,

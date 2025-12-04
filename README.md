@@ -167,12 +167,24 @@ User → Chatbot/API Gateway → VPC Link → ALB → ECS Agents
    bash scripts/03-deploy-infrastructure.sh
    ```
 
-4. **Store API Secret**
+4. **Store API Secrets**
    ```bash
+   # Anthropic Claude API key
    aws secretsmanager put-secret-value \
      --secret-id dev-anthropic-api-key \
-     --secret-string '{"api_key":"your-api-key"}'
+     --secret-string '{"api_key":"your-anthropic-api-key"}'
+
+   # GitHub Personal Access Token (for repository operations)
+   aws secretsmanager put-secret-value \
+     --secret-id dev-github-credentials \
+     --secret-string '{"token":"your_github_token","owner":"darrylbowler72"}'
    ```
+
+   **Creating a GitHub Personal Access Token:**
+   1. Go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
+   2. Click "Generate new token (classic)"
+   3. Select scopes: `repo` (all), `workflow`, `admin:repo_hook`
+   4. Copy the generated token and use it in the command above
 
 5. **Build and Deploy Agents**
    ```bash

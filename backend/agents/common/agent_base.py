@@ -14,6 +14,7 @@ from typing import Dict, Any, Optional, List
 
 import boto3
 import anthropic
+from github import Github
 from botocore.exceptions import ClientError
 
 
@@ -49,6 +50,10 @@ class BaseAgent(ABC):
 
         # Claude API client (will be initialized lazily)
         self._anthropic_client: Optional[anthropic.Anthropic] = None
+
+        # GitHub API client (will be initialized lazily)
+        self._github_client: Optional[Github] = None
+        self._github_owner: Optional[str] = None
 
         self.logger.info(f"{agent_name.capitalize()} Agent initialized")
 
@@ -156,6 +161,32 @@ class BaseAgent(ABC):
         except Exception as e:
             self.logger.error(f"Error calling Claude API: {e}")
             raise
+
+    async def _get_github_client(self) -> tuple[Github, str]:
+        """
+        Get or create GitHub API client.
+
+        Returns:
+            Tuple of (Github client, owner username)
+        """
+        if self._github_client is None:
+            try:
+                secret = await self.get_secret('github-credentials')
+                token = secret.get('token') or secret.get('github_token')
+                owner = secret.get('owner', 'darrylbowler72')
+
+                self._github_client = Github(token)
+                self._github_owner = owner
+
+                # Test authentication
+                user = self._github_client.get_user()
+                self.logger.info(f"GitHub client initialized for user: {user.login}")
+
+            except Exception as e:
+                self.logger.error(f"Failed to initialize GitHub client: {e}")
+                raise
+
+        return self._github_client, self._github_owner
 
     async def store_artifact_s3(
         self,

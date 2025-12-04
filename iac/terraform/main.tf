@@ -104,9 +104,14 @@ module "ecs" {
 }
 
 # Secrets Manager
+resource "aws_secretsmanager_secret" "github_credentials" {
+  name        = "${var.environment}-github-credentials"
+  description = "GitHub API credentials"
+}
+
 resource "aws_secretsmanager_secret" "gitlab_credentials" {
   name        = "${var.environment}-gitlab-credentials"
-  description = "GitLab API credentials"
+  description = "GitLab API credentials (Optional)"
 }
 
 resource "aws_secretsmanager_secret" "anthropic_api_key" {

@@ -16,7 +16,8 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-import gitlab
+from github import Github
+from github.GithubException import GithubException
 import sys
 sys.path.append('../..')
 
@@ -45,8 +46,9 @@ class CodeGenAgent(BaseAgent):
     def __init__(self):
         super().__init__(agent_name="codegen")
 
-        # GitLab client (will be initialized with credentials)
-        self.gitlab_client: Optional[gitlab.Gitlab] = None
+        # GitHub client (will be initialized with credentials)
+        self.github_client: Optional[Github] = None
+        self.github_owner: Optional[str] = None
 
         # Jinja2 template environment
         template_dir = Path(__file__).parent.parent.parent.parent / "templates"
@@ -57,23 +59,18 @@ class CodeGenAgent(BaseAgent):
 
         self.logger.info("CodeGen Agent initialized")
 
-    async def _initialize_gitlab(self):
-        """Initialize GitLab client with credentials from Secrets Manager."""
-        if self.gitlab_client:
+    async def _initialize_github(self):
+        """Initialize GitHub client with credentials from Secrets Manager."""
+        if self.github_client:
             return
 
         try:
-            secret = await self.get_secret("gitlab-credentials")
-            self.gitlab_client = gitlab.Gitlab(
-                url=secret.get('url', 'https://gitlab.com'),
-                private_token=secret['token']
-            )
-            self.gitlab_client.auth()
-            self.logger.info("GitLab client initialized")
+            self.github_client, self.github_owner = await self._get_github_client()
+            self.logger.info(f"GitHub client initialized for owner: {self.github_owner}")
         except Exception as e:
-            self.logger.warning(f"Could not initialize GitLab client: {e}")
+            self.logger.warning(f"Could not initialize GitHub client: {e}")
             # For development, create a dummy client
-            self.gitlab_client = None
+            self.github_client = None
 
     async def process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Process a code generation task."""
@@ -113,8 +110,8 @@ class CodeGenAgent(BaseAgent):
         """
         self.logger.info(f"Generating {language} microservice: {service_name}")
 
-        # Initialize GitLab if needed
-        await self._initialize_gitlab()
+        # Initialize GitHub if needed
+        await self._initialize_github()
 
         # Generate files from templates
         files = await self._generate_from_templates(
@@ -654,7 +651,7 @@ See documentation for more details.
         files: Dict[str, str]
     ) -> str:
         """
-        Create GitLab repository and push generated code.
+        Create GitHub repository and push generated code.
 
         Args:
             service_name: Service name
@@ -663,34 +660,60 @@ See documentation for more details.
         Returns:
             Repository URL
         """
-        if not self.gitlab_client:
-            self.logger.warning("GitLab client not available, skipping repo creation")
-            return f"https://gitlab.com/placeholder/{service_name}"
+        if not self.github_client:
+            self.logger.warning("GitHub client not available, skipping repo creation")
+            return f"https://github.com/{self.github_owner or 'placeholder'}/{service_name}"
 
         try:
-            # Create project
-            project = self.gitlab_client.projects.create({
-                'name': service_name,
-                'description': f'Auto-generated microservice: {service_name}',
-                'visibility': 'private',
-                'initialize_with_readme': False
-            })
+            # Get authenticated user
+            user = self.github_client.get_user()
 
-            # Push files to repository
+            # Create repository
+            repo = user.create_repo(
+                name=service_name,
+                description=f'Auto-generated microservice: {service_name}',
+                private=True,
+                auto_init=False  # Don't auto-create README
+            )
+
+            # Create initial commit with all files
+            # GitHub API requires all files to be committed at once for initial commit
+            file_list = []
             for file_path, content in files.items():
-                project.files.create({
-                    'file_path': file_path,
-                    'branch': 'main',
-                    'content': content,
-                    'commit_message': f'Add {file_path}'
+                # Create InputGitTreeElement for each file
+                file_list.append({
+                    "path": file_path,
+                    "mode": "100644",
+                    "type": "blob",
+                    "content": content
                 })
 
-            self.logger.info(f"Created repository: {project.web_url}")
-            return project.web_url
+            # Create tree
+            tree = repo.create_git_tree(file_list)
 
+            # Create commit
+            commit = repo.create_git_commit(
+                message="Initial commit: Auto-generated microservice code",
+                tree=tree
+            )
+
+            # Update main branch reference
+            try:
+                ref = repo.get_git_ref("heads/main")
+                ref.edit(commit.sha)
+            except:
+                # If main doesn't exist, create it
+                repo.create_git_ref("refs/heads/main", commit.sha)
+
+            self.logger.info(f"Created repository: {repo.html_url}")
+            return repo.html_url
+
+        except GithubException as e:
+            self.logger.error(f"GitHub API error creating repository: {e}")
+            return f"https://github.com/{self.github_owner or 'placeholder'}/{service_name}"
         except Exception as e:
-            self.logger.error(f"Error creating GitLab repository: {e}")
-            return f"https://gitlab.com/placeholder/{service_name}"
+            self.logger.error(f"Error creating GitHub repository: {e}")
+            return f"https://github.com/{self.github_owner or 'placeholder'}/{service_name}"
 
 
 # Initialize agent
