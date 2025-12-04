@@ -325,6 +325,7 @@ aws secretsmanager get-secret-value \
 ## Documentation
 
 - [Architecture Documentation](./architecture.md) - Detailed technical architecture
+- [GitHub Integration Guide](./docs/GITHUB_INTEGRATION.md) - Complete guide for GitHub integration
 - User Stories: See `/user-stories` directory for requirements
 
 ## Support
