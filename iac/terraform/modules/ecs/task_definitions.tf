@@ -138,7 +138,20 @@ resource "aws_ecs_service" "agents" {
     assign_public_ip = false
   }
 
+  load_balancer {
+    target_group_arn = lookup({
+      planner     = aws_lb_target_group.planner.arn
+      codegen     = aws_lb_target_group.codegen.arn
+      remediation = aws_lb_target_group.remediation.arn
+    }, each.key)
+    container_name = "${each.key}-agent"
+    container_port = each.value.port
+  }
+
   enable_execute_command = true
+
+  # Ensure ALB is created before the service
+  depends_on = [aws_lb_listener.http]
 
   tags = {
     Name = "${var.environment}-${each.key}-agent-service"

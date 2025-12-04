@@ -134,6 +134,7 @@ output "policy_bundles_bucket_name" {
   value = aws_s3_bucket.policy_bundles.id
 }
 
-output "terraform_state_bucket_name" {
-  value = aws_s3_bucket.terraform_state.id
-}
+# Commented out since terraform state bucket is managed externally
+# output "terraform_state_bucket_name" {
+#   value = aws_s3_bucket.terraform_state.id
+# }

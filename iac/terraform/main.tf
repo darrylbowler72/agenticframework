@@ -62,8 +62,13 @@ module "eventbridge" {
 module "api_gateway" {
   source = "./modules/api_gateway"
 
-  environment = var.environment
-  vpc_id      = module.vpc.vpc_id
+  environment            = var.environment
+  vpc_id                 = module.vpc.vpc_id
+  private_subnet_ids     = module.vpc.private_subnet_ids
+  alb_listener_arn       = module.ecs.alb_listener_arn
+  alb_security_group_id  = module.ecs.alb_security_group_id
+
+  depends_on = [module.ecs]
 }
 
 # Lambda Functions

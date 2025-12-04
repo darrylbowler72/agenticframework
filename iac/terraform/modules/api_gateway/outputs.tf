@@ -8,8 +8,7 @@ output "api_endpoint" {
   value       = aws_apigatewayv2_stage.main.invoke_url
 }
 
-# Commented out since VPC link is not created yet
-# output "vpc_link_id" {
-#   description = "VPC Link ID"
-#   value       = aws_apigatewayv2_vpc_link.main.id
-# }
+output "vpc_link_id" {
+  description = "VPC Link ID"
+  value       = aws_apigatewayv2_vpc_link.main.id
+}

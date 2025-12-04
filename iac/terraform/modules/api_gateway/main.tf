@@ -38,13 +38,73 @@ resource "aws_cloudwatch_log_group" "api_gateway" {
   retention_in_days = 30
 }
 
-# VPC Link (for private integrations) - Commented out for now, will add later
-# resource "aws_apigatewayv2_vpc_link" "main" {
-#   name               = "${var.environment}-vpc-link"
-#   security_group_ids = []
-#   subnet_ids         = []
-#
-#   tags = {
-#     Name = "${var.environment}-vpc-link"
-#   }
-# }
+# VPC Link (for private integrations with ALB)
+resource "aws_apigatewayv2_vpc_link" "main" {
+  name               = "${var.environment}-vpc-link"
+  security_group_ids = [var.alb_security_group_id]
+  subnet_ids         = var.private_subnet_ids
+
+  tags = {
+    Name = "${var.environment}-vpc-link"
+  }
+}
+
+# Integration with ALB
+resource "aws_apigatewayv2_integration" "alb" {
+  api_id             = aws_apigatewayv2_api.main.id
+  integration_type   = "HTTP_PROXY"
+  integration_method = "ANY"
+  integration_uri    = var.alb_listener_arn
+  connection_type    = "VPC_LINK"
+  connection_id      = aws_apigatewayv2_vpc_link.main.id
+
+  # Preserve the original request path
+  payload_format_version = "1.0"
+  timeout_milliseconds   = 30000
+}
+
+# Routes for Planner Agent
+resource "aws_apigatewayv2_route" "create_workflow" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /workflows"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "get_workflow" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /workflows/{workflow_id}"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+# Routes for CodeGen Agent
+resource "aws_apigatewayv2_route" "generate" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /generate"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+# Routes for Remediation Agent
+resource "aws_apigatewayv2_route" "remediate" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /remediate"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+# Health check routes
+resource "aws_apigatewayv2_route" "planner_health" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /planner/health"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "codegen_health" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /codegen/health"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "remediation_health" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /remediation/health"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}

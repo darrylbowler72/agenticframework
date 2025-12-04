@@ -4,18 +4,25 @@
 The **DevOps Agentic Framework** provides an autonomous, AI-driven platform that accelerates software delivery by integrating multi-agent automation, GitOps workflows, policy enforcement, and developer experience tooling.
 
 ## Current Status
-**✅ DEPLOYED AND RUNNING**
+**✅ FULLY OPERATIONAL - API GATEWAY INTEGRATED**
 
-The framework infrastructure is currently deployed in AWS with the following components:
+The framework is now fully deployed and accessible via public API Gateway endpoints!
 
 ### Active Services
-- **3 AI Agent Services** running on AWS ECS Fargate:
+- **3 AI Agent Services** running on AWS ECS Fargate (accessible via API Gateway):
   - Planner Agent (port 8000) - Orchestrates multi-step workflows
   - CodeGen Agent (port 8001) - Generates code and infrastructure templates
   - Remediation Agent (port 8002) - Automatically fixes detected issues
 
+- **API Gateway**: `https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev`
+  - POST /workflows - Create workflows
+  - POST /generate - Generate microservices
+  - POST /remediate - Auto-fix issues
+  - GET /*/health - Health checks
+
 - **Infrastructure Components**:
-  - AWS API Gateway for agent orchestration
+  - Application Load Balancer (internal) routing to ECS services
+  - VPC Link connecting API Gateway to private ALB
   - DynamoDB tables for workflow and deployment state
   - S3 buckets for artifacts, templates, and policy bundles
   - EventBridge for event-driven agent communication
@@ -119,13 +126,51 @@ cd iac/terraform
 terraform output api_gateway_url
 ```
 
+## Quick Start - Try It Now!
+
+### Test Health Endpoints
+```bash
+curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/planner/health
+```
+
+### Create a Workflow
+```bash
+curl -X POST https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/workflows \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template": "microservice-rest-api",
+    "requested_by": "user@example.com",
+    "parameters": {
+      "service_name": "user-service",
+      "language": "python",
+      "database": "postgresql",
+      "environment": "dev"
+    }
+  }'
+```
+
+### Generate Microservice Code
+```bash
+curl -X POST https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "service_name": "payment-service",
+    "language": "python",
+    "database": "postgresql",
+    "api_type": "rest",
+    "environment": "dev"
+  }'
+```
+
 ## Example Workflow
 1. Developer sends request to API Gateway endpoint
-2. Planner Agent receives request and decomposes into tasks
-3. Tasks published to EventBridge
-4. Specialized agents (CodeGen, Remediation) process their tasks
-5. Results stored in DynamoDB and S3
-6. Workflow status available via API
+2. API Gateway routes through VPC Link to internal ALB
+3. ALB forwards to appropriate ECS service
+4. Planner Agent receives request and decomposes into tasks
+5. Tasks published to EventBridge
+6. Specialized agents (CodeGen, Remediation) process their tasks
+7. Results stored in DynamoDB and S3
+8. Workflow status available via API
 
 ## Documentation
 - [Architecture Documentation](./architecture.md) - Detailed system architecture
