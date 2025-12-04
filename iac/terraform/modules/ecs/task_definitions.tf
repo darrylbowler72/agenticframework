@@ -20,6 +20,12 @@ locals {
       memory      = 1024
       environment = "DYNAMODB_TABLE"
     }
+    chatbot = {
+      port        = 8003
+      cpu         = 512
+      memory      = 1024
+      environment = "DYNAMODB_TABLE"
+    }
   }
 }
 
@@ -143,6 +149,7 @@ resource "aws_ecs_service" "agents" {
       planner     = aws_lb_target_group.planner.arn
       codegen     = aws_lb_target_group.codegen.arn
       remediation = aws_lb_target_group.remediation.arn
+      chatbot     = aws_lb_target_group.chatbot.arn
     }, each.key)
     container_name = "${each.key}-agent"
     container_port = each.value.port

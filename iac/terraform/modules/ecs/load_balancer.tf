@@ -25,7 +25,7 @@ resource "aws_security_group" "alb" {
   ingress {
     description = "Allow health checks from VPC"
     from_port   = 8000
-    to_port     = 8002
+    to_port     = 8003
     protocol    = "tcp"
     cidr_blocks = ["10.0.0.0/16"]
   }
@@ -132,6 +132,31 @@ resource "aws_lb_target_group" "remediation" {
 
   tags = {
     Name = "${var.environment}-remediation-tg"
+  }
+}
+
+resource "aws_lb_target_group" "chatbot" {
+  name        = "${var.environment}-chatbot-tg"
+  port        = 8003
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    timeout             = 5
+    interval            = 30
+    path                = "/health"
+    protocol            = "HTTP"
+    matcher             = "200"
+  }
+
+  deregistration_delay = 30
+
+  tags = {
+    Name = "${var.environment}-chatbot-tg"
   }
 }
 
@@ -253,11 +278,92 @@ resource "aws_lb_listener_rule" "remediation_health" {
   }
 }
 
+# Chatbot listener rules
+resource "aws_lb_listener_rule" "chatbot_root" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 50
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.chatbot.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/", "/dev", "/dev/"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "chatbot_static" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 60
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.chatbot.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/static/*", "/dev/static/*"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "chatbot_chat" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 400
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.chatbot.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/chat", "/chat/*", "/dev/chat", "/dev/chat/*"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "chatbot_session" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 410
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.chatbot.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/session/*", "/dev/session/*"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "chatbot_health" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 401
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.chatbot.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/chatbot/health", "/dev/chatbot/health"]
+    }
+  }
+}
+
 # Update ECS task security group to allow traffic from ALB
 resource "aws_security_group_rule" "ecs_from_alb" {
   type                     = "ingress"
   from_port                = 8000
-  to_port                  = 8002
+  to_port                  = 8003
   protocol                 = "tcp"
   security_group_id        = aws_security_group.ecs_tasks.id
   source_security_group_id = aws_security_group.alb.id
@@ -286,6 +392,7 @@ output "target_group_arns" {
     planner     = aws_lb_target_group.planner.arn
     codegen     = aws_lb_target_group.codegen.arn
     remediation = aws_lb_target_group.remediation.arn
+    chatbot     = aws_lb_target_group.chatbot.arn
   }
 }
 
