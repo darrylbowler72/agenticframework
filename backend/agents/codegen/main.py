@@ -668,42 +668,30 @@ See documentation for more details.
             # Get authenticated user
             user = self.github_client.get_user()
 
-            # Create repository with auto_init to avoid empty repo issue
+            # Create repository without auto_init
             repo = user.create_repo(
                 name=service_name,
                 description=f'Auto-generated microservice: {service_name}',
                 private=True,
-                auto_init=True  # Initialize with README to create initial commit
+                auto_init=False
             )
 
-            # Get the default branch
-            default_branch = repo.default_branch
-            ref = repo.get_git_ref(f"heads/{default_branch}")
-            latest_commit = repo.get_git_commit(ref.object.sha)
-
-            # Create blobs for all files
-            blobs = []
+            # Use high-level API to create files (creates initial commit automatically)
+            # GitHub's create_file API handles all the Git operations internally
+            first_file = True
             for file_path, content in files.items():
-                blob = repo.create_git_blob(content, "utf-8")
-                blobs.append({
-                    "path": file_path,
-                    "mode": "100644",
-                    "type": "blob",
-                    "sha": blob.sha
-                })
-
-            # Create tree based on the latest commit
-            tree = repo.create_git_tree(blobs, base_tree=latest_commit.tree.sha)
-
-            # Create commit on top of initial commit
-            commit = repo.create_git_commit(
-                message="Add auto-generated microservice code",
-                tree=tree,
-                parents=[latest_commit]
-            )
-
-            # Update the default branch to point to new commit
-            ref.edit(commit.sha)
+                try:
+                    repo.create_file(
+                        path=file_path,
+                        message=f"Add {file_path}" if first_file else f"Update {file_path}",
+                        content=content,
+                        branch="main"
+                    )
+                    first_file = False
+                    self.logger.info(f"Created file: {file_path}")
+                except GithubException as e:
+                    self.logger.warning(f"Could not create file {file_path}: {e}")
+                    continue
 
             self.logger.info(f"Created repository: {repo.html_url}")
             return repo.html_url
