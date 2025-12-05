@@ -1,0 +1,7 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+httpx==0.25.1
+boto3==1.29.7
+anthropic==0.7.7
+python-multipart==0.0.6
