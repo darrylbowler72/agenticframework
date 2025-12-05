@@ -192,3 +192,123 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 // Focus input on load
 document.getElementById('userInput').focus();
+
+// Agent Health Status Functions
+async function fetchAgentHealth() {
+    try {
+        const apiBase = window.location.pathname.startsWith('/dev') ? '/dev' : '';
+        const response = await fetch(`${apiBase}/api/agents/health`);
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch agent health');
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error fetching agent health:', error);
+        return null;
+    }
+}
+
+function updateAgentStatusUI(healthData) {
+    const statusGrid = document.getElementById('agentStatusGrid');
+
+    if (!healthData || !healthData.agents) {
+        statusGrid.innerHTML = '<div class="status-loading">Failed to load agent status</div>';
+        return;
+    }
+
+    // Calculate overall health
+    const agents = healthData.agents;
+    const healthyCount = Object.values(agents).filter(agent =>
+        agent.status === 'healthy' && agent.http_status !== 'error'
+    ).length;
+    const totalCount = Object.keys(agents).length;
+
+    // Update overall status indicator
+    const overallStatus = document.getElementById('overallStatus');
+    overallStatus.className = 'status-indicator';
+    if (healthyCount === totalCount) {
+        overallStatus.classList.add('healthy');
+    } else if (healthyCount > 0) {
+        overallStatus.classList.add('degraded');
+    } else {
+        overallStatus.classList.add('error');
+    }
+
+    // Build agent cards HTML
+    let html = '';
+    for (const [agentName, agentData] of Object.entries(agents)) {
+        const status = agentData.http_status || agentData.status || 'error';
+        const version = agentData.version || 'unknown';
+
+        html += `
+            <div class="agent-card">
+                <div class="agent-info">
+                    <div class="agent-name">${agentName}</div>
+                    <div class="agent-version">v${version}</div>
+                </div>
+                <div class="agent-status ${status}">${status}</div>
+            </div>
+        `;
+    }
+
+    // Add last updated timestamp
+    const lastUpdated = new Date(healthData.timestamp).toLocaleTimeString();
+    html += `<div class="status-last-updated">Last updated: ${lastUpdated}</div>`;
+
+    statusGrid.innerHTML = html;
+}
+
+function toggleAgentStatus() {
+    const panel = document.getElementById('agentStatusPanel');
+
+    if (panel.style.display === 'none' || !panel.style.display) {
+        panel.style.display = 'block';
+        // Fetch fresh data when opening
+        fetchAgentHealth().then(data => {
+            if (data) {
+                updateAgentStatusUI(data);
+            }
+        });
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+// Auto-refresh agent health every 30 seconds if panel is open
+setInterval(() => {
+    const panel = document.getElementById('agentStatusPanel');
+    if (panel.style.display === 'block') {
+        fetchAgentHealth().then(data => {
+            if (data) {
+                updateAgentStatusUI(data);
+            }
+        });
+    }
+}, 30000);
+
+// Fetch initial agent health status after page load
+window.addEventListener('DOMContentLoaded', () => {
+    fetchAgentHealth().then(data => {
+        if (data) {
+            // Update overall status indicator
+            const agents = data.agents;
+            const healthyCount = Object.values(agents).filter(agent =>
+                agent.status === 'healthy' && agent.http_status !== 'error'
+            ).length;
+            const totalCount = Object.keys(agents).length;
+
+            const overallStatus = document.getElementById('overallStatus');
+            overallStatus.className = 'status-indicator';
+            if (healthyCount === totalCount) {
+                overallStatus.classList.add('healthy');
+            } else if (healthyCount > 0) {
+                overallStatus.classList.add('degraded');
+            } else {
+                overallStatus.classList.add('error');
+            }
+        }
+    });
+});

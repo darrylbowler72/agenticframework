@@ -13,7 +13,22 @@
                 <h1>🤖 DevOps at Your Service</h1>
                 <p>Your AI-powered DevOps assistant</p>
             </div>
-            <button class="new-chat-btn" onclick="newChat()">New Chat</button>
+            <div class="header-actions">
+                <button class="status-btn" onclick="toggleAgentStatus()" title="View agent status">
+                    <span class="status-indicator" id="overallStatus">●</span>
+                </button>
+                <button class="new-chat-btn" onclick="newChat()">New Chat</button>
+            </div>
+        </div>
+
+        <div class="agent-status-panel" id="agentStatusPanel" style="display: none;">
+            <div class="status-header">
+                <h3>Agent Health Status</h3>
+                <button class="close-btn" onclick="toggleAgentStatus()">×</button>
+            </div>
+            <div class="status-grid" id="agentStatusGrid">
+                <div class="status-loading">Loading agent status...</div>
+            </div>
         </div>
 
         <div class="chat-messages" id="chatMessages">

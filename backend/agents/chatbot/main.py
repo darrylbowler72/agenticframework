@@ -360,6 +360,56 @@ async def health_check():
     }
 
 
+@app.get("/api/agents/health")
+@app.get("/dev/api/agents/health")
+async def get_agents_health():
+    """Get health status of all agents."""
+    agents = {
+        "planner": "http://internal-dev-agents-alb-2094161508.us-east-1.elb.amazonaws.com/planner/health",
+        "codegen": "http://internal-dev-agents-alb-2094161508.us-east-1.elb.amazonaws.com/codegen/health",
+        "remediation": "http://internal-dev-agents-alb-2094161508.us-east-1.elb.amazonaws.com/remediation/health",
+        "chatbot": "healthy"  # Self
+    }
+
+    health_status = {}
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        for agent_name, endpoint in agents.items():
+            if agent_name == "chatbot":
+                health_status[agent_name] = {
+                    "status": "healthy",
+                    "agent": "chatbot",
+                    "version": "1.0.0"
+                }
+            else:
+                try:
+                    response = await client.get(endpoint)
+                    if response.status_code == 200:
+                        health_status[agent_name] = response.json()
+                        health_status[agent_name]["http_status"] = "healthy"
+                    else:
+                        health_status[agent_name] = {
+                            "status": "unhealthy",
+                            "http_status": f"error_{response.status_code}"
+                        }
+                except httpx.TimeoutException:
+                    health_status[agent_name] = {
+                        "status": "timeout",
+                        "http_status": "timeout"
+                    }
+                except Exception as e:
+                    health_status[agent_name] = {
+                        "status": "error",
+                        "http_status": "error",
+                        "error": str(e)
+                    }
+
+    return {
+        "timestamp": datetime.utcnow().isoformat(),
+        "agents": health_status
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8003)
