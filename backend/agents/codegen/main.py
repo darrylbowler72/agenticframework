@@ -16,13 +16,12 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from github import Github
-from github.GithubException import GithubException
 import sys
 sys.path.append('../..')
 
 from common.agent_base import BaseAgent
 from common.schemas.workflow import ServiceScaffoldRequest
+from common.mcp_client import GitHubMCPClient
 
 
 app = FastAPI(
@@ -46,9 +45,8 @@ class CodeGenAgent(BaseAgent):
     def __init__(self):
         super().__init__(agent_name="codegen")
 
-        # GitHub client (will be initialized with credentials)
-        self.github_client: Optional[Github] = None
-        self.github_owner: Optional[str] = None
+        # MCP GitHub client
+        self.github_client: Optional[GitHubMCPClient] = None
 
         # Jinja2 template environment
         template_dir = Path(__file__).parent.parent.parent.parent / "templates"
@@ -60,16 +58,15 @@ class CodeGenAgent(BaseAgent):
         self.logger.info("CodeGen Agent initialized")
 
     async def _initialize_github(self):
-        """Initialize GitHub client with credentials from Secrets Manager."""
+        """Initialize MCP GitHub client."""
         if self.github_client:
             return
 
         try:
-            self.github_client, self.github_owner = await self._get_github_client()
-            self.logger.info(f"GitHub client initialized for owner: {self.github_owner}")
+            self.github_client = GitHubMCPClient()
+            self.logger.info("MCP GitHub client initialized")
         except Exception as e:
-            self.logger.warning(f"Could not initialize GitHub client: {e}")
-            # For development, create a dummy client
+            self.logger.warning(f"Could not initialize MCP GitHub client: {e}")
             self.github_client = None
 
     async def process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
@@ -661,47 +658,41 @@ See documentation for more details.
             Repository URL
         """
         if not self.github_client:
-            self.logger.warning("GitHub client not available, skipping repo creation")
-            return f"https://github.com/{self.github_owner or 'placeholder'}/{service_name}"
+            self.logger.warning("MCP GitHub client not available, skipping repo creation")
+            return f"https://github.com/placeholder/{service_name}"
 
         try:
-            # Get authenticated user
-            user = self.github_client.get_user()
-
-            # Create repository without auto_init
-            repo = user.create_repo(
+            # Create repository via MCP
+            repo_result = await self.github_client.create_repository(
                 name=service_name,
                 description=f'Auto-generated microservice: {service_name}',
                 private=True,
                 auto_init=False
             )
 
-            # Use high-level API to create files (creates initial commit automatically)
-            # GitHub's create_file API handles all the Git operations internally
-            first_file = True
+            repo_url = repo_result.get('html_url', '')
+            self.logger.info(f"Created repository via MCP: {repo_url}")
+
+            # Create files via MCP
             for file_path, content in files.items():
                 try:
-                    repo.create_file(
-                        path=file_path,
-                        message=f"Add {file_path}" if first_file else f"Update {file_path}",
+                    await self.github_client.create_file(
+                        repo_name=service_name,
+                        file_path=file_path,
                         content=content,
+                        message=f"Add {file_path}",
                         branch="main"
                     )
-                    first_file = False
-                    self.logger.info(f"Created file: {file_path}")
-                except GithubException as e:
-                    self.logger.warning(f"Could not create file {file_path}: {e}")
+                    self.logger.info(f"Created file via MCP: {file_path}")
+                except Exception as e:
+                    self.logger.warning(f"Could not create file {file_path} via MCP: {e}")
                     continue
 
-            self.logger.info(f"Created repository: {repo.html_url}")
-            return repo.html_url
+            return repo_url
 
-        except GithubException as e:
-            self.logger.error(f"GitHub API error creating repository: {e}")
-            return f"https://github.com/{self.github_owner or 'placeholder'}/{service_name}"
         except Exception as e:
-            self.logger.error(f"Error creating GitHub repository: {e}")
-            return f"https://github.com/{self.github_owner or 'placeholder'}/{service_name}"
+            self.logger.error(f"Error creating GitHub repository via MCP: {e}")
+            return f"https://github.com/placeholder/{service_name}"
 
 
 # Initialize agent
