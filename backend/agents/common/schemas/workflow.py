@@ -4,6 +4,7 @@ Pydantic schemas for workflow and service generation requests.
 
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+from enum import Enum
 from pydantic import BaseModel, Field
 
 
@@ -79,3 +80,54 @@ class GenerationResponse(BaseModel):
     files_generated: int
     language: str
     database: str
+
+
+class TaskStatusEnum(str, Enum):
+    """Enum for task status."""
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class AgentType(str, Enum):
+    """Enum for agent types."""
+    PLANNER = "planner"
+    CODEGEN = "codegen"
+    POLICY = "policy"
+    DEPLOYMENT = "deployment"
+    OBSERVABILITY = "observability"
+    REMEDIATION = "remediation"
+
+
+class TaskCreate(BaseModel):
+    """Model for creating a task."""
+    task_id: str
+    agent: AgentType
+    description: str
+    input_params: Dict[str, Any]
+    dependencies: List[str] = Field(default_factory=list)
+    priority: int = 5
+
+
+class TaskStatus(BaseModel):
+    """Model for task status."""
+    task_id: str
+    agent: AgentType
+    status: TaskStatusEnum
+    description: str
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+    estimated_duration: Optional[str] = None
+
+
+class WorkflowStatus(BaseModel):
+    """Model for workflow status."""
+    workflow_id: str
+    status: str
+    template: Optional[str] = None
+    parameters: Optional[Dict[str, Any]] = None
+    requested_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+    tasks: List[Dict[str, Any]] = Field(default_factory=list)
