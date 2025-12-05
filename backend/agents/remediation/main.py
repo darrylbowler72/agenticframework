@@ -525,6 +525,8 @@ async def trigger_remediation(pipeline_id: int, project_id: str):
 
 @app.get("/health")
 @app.get("/dev/health")
+@app.get("/remediation/health")
+@app.get("/dev/remediation/health")
 async def health_check():
     """Health check endpoint."""
     return {

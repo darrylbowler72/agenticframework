@@ -723,6 +723,8 @@ async def generate_microservice(request: ServiceScaffoldRequest):
 
 @app.get("/health")
 @app.get("/dev/health")
+@app.get("/codegen/health")
+@app.get("/dev/codegen/health")
 async def health_check():
     """Health check endpoint."""
     return {

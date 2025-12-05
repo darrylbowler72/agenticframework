@@ -397,6 +397,8 @@ async def get_workflow(workflow_id: str):
 
 @app.get("/health")
 @app.get("/dev/health")
+@app.get("/planner/health")
+@app.get("/dev/planner/health")
 async def health_check():
     """Health check endpoint."""
     return {
