@@ -139,3 +139,9 @@ resource "aws_apigatewayv2_route" "chatbot_health" {
   route_key = "GET /chatbot/health"
   target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
 }
+
+resource "aws_apigatewayv2_route" "agents_health" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /api/agents/health"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
