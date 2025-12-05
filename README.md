@@ -22,11 +22,12 @@ The framework is deployed and accessible via public API Gateway with a conversat
 - POST /chat - Chat with AI assistant
 - GET /*/health - Health checks
 
-**AI Agents Running** (4 agents on AWS ECS Fargate):
+**AI Agents Running** (5 services on AWS ECS Fargate):
 1. **Planner Agent** (port 8000) - Orchestrates multi-step workflows
 2. **CodeGen Agent** (port 8001) - Generates code and infrastructure
 3. **Remediation Agent** (port 8002) - Auto-fixes detected issues
 4. **Chatbot Agent** (port 8003) - Conversational DevOps interface
+5. **MCP GitHub Server** (port 8100) - Model Context Protocol server for GitHub operations
 
 **Infrastructure** (90+ AWS resources deployed):
 - Application Load Balancer routing to ECS services
@@ -87,10 +88,70 @@ curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/planner/health
 - **AI Scaffolding**: Generates repos, microservices, IaC, CI/CD pipelines automatically
 - **Multi-Agent System**: Specialized agents powered by Claude AI work together
 - **Conversational Interface**: Natural language chatbot for DevOps operations
+- **MCP Integration**: Model Context Protocol for standardized tool integration
 - **Event-Driven**: EventBridge-based asynchronous task orchestration
 - **GitOps Ready**: Designed for ArgoCD integration (planned)
 - **Policy Automation**: OPA-based governance (planned)
 - **Observability**: OpenTelemetry integration (planned)
+
+## Model Context Protocol (MCP)
+
+The framework uses **Model Context Protocol** for standardized GitHub operations:
+
+### Architecture
+
+```
+Agent → MCP Client → MCP GitHub Server → GitHub API
+```
+
+### Benefits
+
+- **Separation of Concerns**: Agents focus on business logic, MCP handles GitHub operations
+- **Standardized Interface**: Consistent API across all agents
+- **Centralized Credentials**: GitHub tokens managed in one place
+- **Extensibility**: Easy to add GitLab, Bitbucket, or other Git providers
+- **Maintainability**: Update GitHub logic without changing agents
+
+### MCP GitHub Server
+
+**Location**: `backend/mcp-server/github/`
+**Port**: 8100
+**Endpoint**: `/mcp/call`
+
+**Available Tools**:
+- `github.create_repository` - Create GitHub repositories
+- `github.create_file` - Create files in repositories
+- `github.get_workflow_run` - Get GitHub Actions workflow details
+- `github.list_repositories` - List user repositories
+- `github.get_repository` - Get repository details
+
+### Usage Example
+
+```python
+from common.mcp_client import GitHubMCPClient
+
+# Initialize MCP client
+github = GitHubMCPClient()
+
+# Create repository
+repo = await github.create_repository(
+    name="my-service",
+    description="A new microservice",
+    private=True
+)
+
+# Create file
+await github.create_file(
+    repo_name="my-service",
+    file_path="README.md",
+    content="# My Service",
+    message="Initial commit"
+)
+```
+
+### Deployment
+
+The MCP GitHub Server runs as an ECS Fargate service alongside the agents, accessible via private networking at `http://dev-mcp-github:8100`.
 
 ## Project Structure
 
