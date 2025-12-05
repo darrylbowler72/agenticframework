@@ -366,6 +366,8 @@ async def create_workflow(request: WorkflowRequest):
         return WorkflowResponse(
             workflow_id=result['workflow_id'],
             status=TaskStatusEnum.IN_PROGRESS,
+            template=request.template,
+            parameters=request.parameters,
             tasks=[
                 TaskStatus(
                     task_id=task['task_id'],
