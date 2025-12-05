@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Health Status Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 24px;
+            font-size: 28px;
+        }
+
+        .status-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-bottom: 24px;
+            transition: transform 0.2s;
+        }
+
+        .status-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .agent-card {
+            padding: 16px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .agent-info {
+            flex: 1;
+        }
+
+        .agent-name {
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 16px;
+            text-transform: capitalize;
+        }
+
+        .agent-version {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+
+        .agent-status {
+            padding: 6px 14px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .agent-status.healthy {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .agent-status.degraded, .agent-status.timeout {
+            background: #fed7aa;
+            color: #92400e;
+        }
+
+        .agent-status.error, .agent-status.unhealthy {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-last-updated {
+            text-align: center;
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .loading {
+            text-align: center;
+            color: #64748b;
+            padding: 24px;
+        }
+
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        #healthData {
+            display: none;
+        }
+
+        #healthData.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Agent Health Status Dashboard</h1>
+
+        <button class="status-btn" onclick="fetchHealth()">
+            Check Agent Health
+        </button>
+
+        <div id="errorMessage"></div>
+        <div id="healthData">
+            <div id="agentsList"></div>
+            <div class="status-last-updated" id="lastUpdated"></div>
+        </div>
+    </div>
+
+    <script>
+        async function fetchHealth() {
+            const errorDiv = document.getElementById('errorMessage');
+            const healthDiv = document.getElementById('healthData');
+            const agentsList = document.getElementById('agentsList');
+            const lastUpdated = document.getElementById('lastUpdated');
+
+            // Show loading
+            agentsList.innerHTML = '<div class="loading">Fetching agent health status...</div>';
+            healthDiv.classList.add('show');
+            errorDiv.innerHTML = '';
+
+            try {
+                // Test both endpoints
+                const apiBase = 'https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev';
+
+                // Try the aggregated health endpoint
+                let response = await fetch(`${apiBase}/api/agents/health`);
+
+                // If that doesn't work, simulate the data using individual agent health checks
+                if (!response.ok) {
+                    console.log('Aggregated endpoint not available, fetching individual health checks...');
+
+                    // Simulate aggregated health data
+                    const agents = {
+                        'chatbot': await fetchAgentHealth(`${apiBase}/chatbot/health`),
+                        'planner': await fetchAgentHealth(`${apiBase}/planner/health`),
+                        'codegen': await fetchAgentHealth(`${apiBase}/codegen/health`),
+                        'remediation': await fetchAgentHealth(`${apiBase}/remediation/health`)
+                    };
+
+                    displayAgentHealth({
+                        timestamp: new Date().toISOString(),
+                        agents: agents
+                    });
+                } else {
+                    const data = await response.json();
+                    displayAgentHealth(data);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                errorDiv.innerHTML = `<div class="error">Error fetching health data: ${error.message}</div>`;
+                healthDiv.classList.remove('show');
+            }
+        }
+
+        async function fetchAgentHealth(url) {
+            try {
+                const response = await fetch(url);
+                if (response.ok) {
+                    const data = await response.json();
+                    return {
+                        status: data.status,
+                        http_status: 'healthy',
+                        version: data.version || '1.0.0'
+                    };
+                } else {
+                    return {
+                        status: 'error',
+                        http_status: `error_${response.status}`,
+                        version: 'unknown'
+                    };
+                }
+            } catch (error) {
+                return {
+                    status: 'error',
+                    http_status: 'error',
+                    error: error.message,
+                    version: 'unknown'
+                };
+            }
+        }
+
+        function displayAgentHealth(data) {
+            const agentsList = document.getElementById('agentsList');
+            const lastUpdated = document.getElementById('lastUpdated');
+
+            let html = '';
+            for (const [agentName, agentData] of Object.entries(data.agents)) {
+                const status = agentData.http_status || agentData.status || 'error';
+                const version = agentData.version || 'unknown';
+
+                html += `
+                    <div class="agent-card">
+                        <div class="agent-info">
+                            <div class="agent-name">${agentName}</div>
+                            <div class="agent-version">v${version}</div>
+                        </div>
+                        <div class="agent-status ${status}">${status}</div>
+                    </div>
+                `;
+            }
+
+            agentsList.innerHTML = html;
+
+            const timestamp = new Date(data.timestamp).toLocaleString();
+            lastUpdated.textContent = `Last updated: ${timestamp}`;
+        }
+
+        // Auto-fetch on load
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('Page loaded, click the button to check agent health');
+        });
+    </script>
+</body>
+</html>
