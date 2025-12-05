@@ -101,9 +101,10 @@ echo "Building Agent Images with Podman"
 echo "================================================"
 echo ""
 
-build_and_push "planner" "backend/Dockerfile.planner" "backend"
-build_and_push "codegen" "backend/Dockerfile.codegen" "backend"
-build_and_push "remediation" "backend/Dockerfile.remediation" "backend"
+build_and_push "planner" "backend/Dockerfile.planner" "."
+build_and_push "codegen" "backend/Dockerfile.codegen" "."
+build_and_push "remediation" "backend/Dockerfile.remediation" "."
+build_and_push "chatbot" "backend/Dockerfile.chatbot" "."
 
 # Build and push MCP GitHub server (uses different naming convention)
 echo "Building and pushing: MCP GitHub Server"

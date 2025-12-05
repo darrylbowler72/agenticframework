@@ -2,15 +2,18 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Copy VERSION file for semantic versioning
+COPY VERSION /VERSION
+
 # Copy common modules and requirements
-COPY agents/common/ /app/common/
-COPY agents/common/requirements.txt /app/requirements.txt
+COPY backend/agents/common/ /app/common/
+COPY backend/agents/common/requirements.txt /app/requirements.txt
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy codegen agent
-COPY agents/codegen/ /app/codegen/
+COPY backend/agents/codegen/ /app/codegen/
 
 # Set Python path
 ENV PYTHONPATH=/app
