@@ -13,12 +13,11 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from github import Github
-from github.GithubException import GithubException
 import sys
 sys.path.append('../..')
 
 from common.agent_base import BaseAgent
+from common.mcp_client import GitHubMCPClient
 
 
 app = FastAPI(
@@ -41,8 +40,7 @@ class RemediationAgent(BaseAgent):
 
     def __init__(self):
         super().__init__(agent_name="remediation")
-        self.github_client: Optional[Github] = None
-        self.github_owner: Optional[str] = None
+        self.github_client: Optional[GitHubMCPClient] = None
         self.playbooks_table = None
         self.actions_table = None
         self._initialize_tables()
@@ -57,15 +55,15 @@ class RemediationAgent(BaseAgent):
             self.logger.warning(f"Could not initialize DynamoDB tables: {e}")
 
     async def _initialize_github(self):
-        """Initialize GitHub client."""
+        """Initialize GitHub MCP client."""
         if self.github_client:
             return
 
         try:
-            self.github_client, self.github_owner = await self._get_github_client()
-            self.logger.info(f"GitHub client initialized for owner: {self.github_owner}")
+            self.github_client = GitHubMCPClient()
+            self.logger.info("GitHub MCP client initialized")
         except Exception as e:
-            self.logger.warning(f"Could not initialize GitHub client: {e}")
+            self.logger.warning(f"Could not initialize GitHub MCP client: {e}")
 
     async def process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Process a remediation task."""
@@ -120,7 +118,7 @@ class RemediationAgent(BaseAgent):
 
     async def _fetch_pipeline_logs(self, pipeline_id: int, project_id: str) -> str:
         """
-        Fetch pipeline logs from GitHub Actions.
+        Fetch pipeline logs from GitHub Actions via MCP.
 
         Args:
             pipeline_id: Workflow run ID
@@ -133,43 +131,36 @@ class RemediationAgent(BaseAgent):
             return "Sample error logs: ModuleNotFoundError: No module named 'requests'"
 
         try:
-            # Get repository (handle both "repo" and "owner/repo" formats)
-            if '/' in str(project_id):
-                repo = self.github_client.get_repo(project_id)
-            else:
-                repo = self.github_client.get_repo(f"{self.github_owner}/{project_id}")
+            # Get workflow run with jobs and steps via MCP
+            run_data = await self.github_client.get_workflow_run(
+                repo_name=project_id,
+                run_id=pipeline_id
+            )
 
-            # Get workflow run
-            run = repo.get_workflow_run(pipeline_id)
-
-            # Get jobs for this run
-            jobs = run.jobs()
+            # Extract jobs from the response
+            jobs = run_data.get('jobs', [])
 
             logs = []
             for job in jobs:
-                if job.conclusion == 'failure':
+                if job.get('conclusion') == 'failure':
                     try:
-                        # GitHub API returns logs as downloadable content
-                        # For now, we'll use job steps information
+                        # Get failed steps
                         steps_info = []
-                        for step in job.steps:
-                            if step.conclusion == 'failure':
-                                steps_info.append(f"Step '{step.name}' failed")
+                        for step in job.get('steps', []):
+                            if step.get('conclusion') == 'failure':
+                                steps_info.append(f"Step '{step.get('name')}' failed")
 
-                        job_log = f"=== Job: {job.name} ===\n"
-                        job_log += f"Status: {job.status}, Conclusion: {job.conclusion}\n"
+                        job_log = f"=== Job: {job.get('name')} ===\n"
+                        job_log += f"Status: {job.get('status')}, Conclusion: {job.get('conclusion')}\n"
                         job_log += "\n".join(steps_info)
                         logs.append(job_log + "\n")
                     except Exception as step_error:
-                        self.logger.warning(f"Error fetching job steps: {step_error}")
+                        self.logger.warning(f"Error processing job steps: {step_error}")
 
             return "\n".join(logs) if logs else "No detailed failure logs available"
 
-        except GithubException as e:
-            self.logger.error(f"GitHub API error fetching pipeline logs: {e}")
-            return f"Error accessing GitHub: {e.data.get('message', str(e))}"
         except Exception as e:
-            self.logger.error(f"Error fetching pipeline logs: {e}")
+            self.logger.error(f"Error fetching pipeline logs via MCP: {e}")
             return f"Error: {str(e)}"
 
     async def _analyze_failure(self, logs: str, context: Dict[str, Any]) -> Dict[str, Any]:

@@ -253,6 +253,35 @@ async def get_workflow_run(params: Dict[str, Any]) -> Dict[str, Any]:
         except:
             pass
 
+        # Get jobs and steps if available
+        jobs_data = []
+        try:
+            jobs = run.jobs()
+            for job in jobs:
+                steps_data = []
+                try:
+                    for step in job.steps:
+                        steps_data.append({
+                            "name": step.name,
+                            "status": step.status,
+                            "conclusion": step.conclusion,
+                            "number": step.number
+                        })
+                except Exception as step_error:
+                    logger.warning(f"Error fetching steps for job {job.name}: {step_error}")
+
+                jobs_data.append({
+                    "id": job.id,
+                    "name": job.name,
+                    "status": job.status,
+                    "conclusion": job.conclusion,
+                    "started_at": job.started_at.isoformat() if job.started_at else None,
+                    "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+                    "steps": steps_data
+                })
+        except Exception as jobs_error:
+            logger.warning(f"Error fetching jobs: {jobs_error}")
+
         return {
             "id": run.id,
             "name": run.name,
@@ -261,7 +290,8 @@ async def get_workflow_run(params: Dict[str, Any]) -> Dict[str, Any]:
             "html_url": run.html_url,
             "logs_url": logs_url,
             "created_at": run.created_at.isoformat() if run.created_at else None,
-            "updated_at": run.updated_at.isoformat() if run.updated_at else None
+            "updated_at": run.updated_at.isoformat() if run.updated_at else None,
+            "jobs": jobs_data
         }
 
     except GithubException as e:
