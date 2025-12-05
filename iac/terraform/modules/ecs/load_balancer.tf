@@ -359,6 +359,22 @@ resource "aws_lb_listener_rule" "chatbot_health" {
   }
 }
 
+resource "aws_lb_listener_rule" "agents_health" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 402
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.chatbot.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/agents/health", "/dev/api/agents/health"]
+    }
+  }
+}
+
 # Update ECS task security group to allow traffic from ALB
 resource "aws_security_group_rule" "ecs_from_alb" {
   type                     = "ingress"

@@ -15,6 +15,7 @@ import sys
 sys.path.append('../..')
 
 from common.agent_base import BaseAgent
+from common.version import __version__
 from common.schemas.workflow import (
     WorkflowRequest,
     WorkflowResponse,
@@ -401,7 +402,7 @@ async def health_check():
     return {
         "status": "healthy",
         "agent": "planner",
-        "version": "1.0.0",
+        "version": __version__,
         "timestamp": datetime.utcnow().isoformat()
     }
 

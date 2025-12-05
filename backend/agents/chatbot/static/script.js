@@ -197,13 +197,16 @@ document.getElementById('userInput').focus();
 async function fetchAgentHealth() {
     try {
         const apiBase = window.location.pathname.startsWith('/dev') ? '/dev' : '';
+        console.log('Fetching agent health from:', `${apiBase}/api/agents/health`);
         const response = await fetch(`${apiBase}/api/agents/health`);
 
         if (!response.ok) {
+            console.error('Health check response not OK:', response.status);
             throw new Error('Failed to fetch agent health');
         }
 
         const data = await response.json();
+        console.log('Agent health data received:', data);
         return data;
     } catch (error) {
         console.error('Error fetching agent health:', error);
@@ -212,9 +215,11 @@ async function fetchAgentHealth() {
 }
 
 function updateAgentStatusUI(healthData) {
+    console.log('updateAgentStatusUI called with:', healthData);
     const statusGrid = document.getElementById('agentStatusGrid');
 
     if (!healthData || !healthData.agents) {
+        console.error('Invalid health data:', healthData);
         statusGrid.innerHTML = '<div class="status-loading">Failed to load agent status</div>';
         return;
     }

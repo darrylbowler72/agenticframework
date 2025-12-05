@@ -17,6 +17,7 @@ import sys
 sys.path.append('../..')
 
 from common.agent_base import BaseAgent
+from common.version import __version__
 from common.mcp_client import GitHubMCPClient
 
 
@@ -529,7 +530,7 @@ async def health_check():
     return {
         "status": "healthy",
         "agent": "remediation",
-        "version": "1.0.0"
+        "version": __version__
     }
 
 

@@ -22,6 +22,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from common.agent_base import BaseAgent
+from common.version import __version__
 
 app = FastAPI(
     title="DevOps at Your Service - Chatbot",
@@ -355,7 +356,7 @@ async def health_check():
         "status": "healthy",
         "agent": "chatbot",
         "service": "DevOps at Your Service",
-        "version": "1.0.0",
+        "version": __version__,
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -379,7 +380,8 @@ async def get_agents_health():
                 health_status[agent_name] = {
                     "status": "healthy",
                     "agent": "chatbot",
-                    "version": "1.0.0"
+                    "version": __version__,
+                    "http_status": "healthy"
                 }
             else:
                 try:
