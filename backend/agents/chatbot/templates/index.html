@@ -10,10 +10,25 @@
     <div class="chat-container">
         <div class="chat-header">
             <div class="header-content">
-                <h1>DevOps at Your Service</h1>
-                <p>AI-powered DevOps automation assistant</p>
+                <h1>🤖 DevOps at Your Service</h1>
+                <p>Your AI-powered DevOps assistant</p>
             </div>
-            <button class="new-chat-btn" onclick="newChat()">New Chat</button>
+            <div class="header-actions">
+                <button class="status-btn" onclick="toggleAgentStatus()" title="View agent status">
+                    <span class="status-indicator" id="overallStatus">●</span>
+                </button>
+                <button class="new-chat-btn" onclick="newChat()">New Chat</button>
+            </div>
+        </div>
+
+        <div class="agent-status-panel" id="agentStatusPanel" style="display: none;">
+            <div class="status-header">
+                <h3>Agent Health Status</h3>
+                <button class="close-btn" onclick="toggleAgentStatus()">×</button>
+            </div>
+            <div class="status-grid" id="agentStatusGrid">
+                <div class="status-loading">Loading agent status...</div>
+            </div>
         </div>
 
         <div class="chat-messages" id="chatMessages">
@@ -30,26 +45,24 @@
             </div>
         </div>
 
-        <div id="typingIndicator" class="typing-indicator" style="display: none;">
-            <span></span>
-            <span></span>
-            <span></span>
-        </div>
-
         <div class="chat-input-container">
             <div class="input-wrapper">
                 <textarea
                     id="userInput"
                     placeholder="Type your message here..."
                     rows="1"
-                    onkeypress="handleKeyPress(event)"
+                    onkeydown="handleKeyPress(event)"
                 ></textarea>
                 <button id="sendBtn" onclick="sendMessage()">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="22" y1="2" x2="11" y2="13"></line>
-                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path d="M2 10L18 2L10 18L8 11L2 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                 </button>
+            </div>
+            <div class="typing-indicator" id="typingIndicator" style="display: none;">
+                <span></span>
+                <span></span>
+                <span></span>
             </div>
         </div>
     </div>
