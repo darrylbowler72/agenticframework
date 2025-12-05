@@ -83,7 +83,7 @@ class PlannerAgent(BaseAgent):
         # Publish task.created events for each task
         for task in tasks:
             await self.publish_event(
-                event_type='task.created',
+                detail_type='task.created',
                 detail={
                     'workflow_id': workflow_id,
                     'task_id': task['task_id'],
