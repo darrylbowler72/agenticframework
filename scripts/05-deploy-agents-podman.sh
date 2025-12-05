@@ -105,14 +105,39 @@ build_and_push "planner" "backend/Dockerfile.planner" "backend"
 build_and_push "codegen" "backend/Dockerfile.codegen" "backend"
 build_and_push "remediation" "backend/Dockerfile.remediation" "backend"
 
+# Build and push MCP GitHub server (uses different naming convention)
+echo "Building and pushing: MCP GitHub Server"
+echo "-----------------------------------"
+
+create_ecr_repo "mcp-github"
+
+echo "Building Podman image..."
+podman build -f backend/Dockerfile.mcp-github -t mcp-github:latest backend
+
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+podman tag mcp-github:latest $ECR_PREFIX/mcp-github:latest
+podman tag mcp-github:latest $ECR_PREFIX/mcp-github:$TIMESTAMP
+
+echo -e "${GREEN}✓ Image built${NC}"
+
+echo "Pushing to ECR..."
+podman push $ECR_PREFIX/mcp-github:latest
+podman push $ECR_PREFIX/mcp-github:$TIMESTAMP
+
+echo -e "${GREEN}✓ Image pushed${NC}"
+echo ""
+
 echo "================================================"
-echo -e "${GREEN}✓ All agents deployed successfully!${NC}"
+echo -e "${GREEN}✓ All agents and services deployed successfully!${NC}"
 echo "================================================"
 echo ""
 echo "Deployed agents:"
 echo "  - Planner Agent"
 echo "  - CodeGen Agent"
 echo "  - Remediation Agent"
+echo ""
+echo "Deployed services:"
+echo "  - MCP GitHub Server"
 echo ""
 echo "Images pushed to:"
 echo "  $ECR_PREFIX"

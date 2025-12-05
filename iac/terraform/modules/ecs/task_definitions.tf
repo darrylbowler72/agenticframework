@@ -68,6 +68,10 @@ resource "aws_ecs_task_definition" "agents" {
       {
         name  = "LOG_LEVEL"
         value = "INFO"
+      },
+      {
+        name  = "MCP_GITHUB_URL"
+        value = "http://${var.environment}-mcp-github.${var.environment}-agentic.local:8100"
       }
     ]
 
@@ -162,5 +166,131 @@ resource "aws_ecs_service" "agents" {
 
   tags = {
     Name = "${var.environment}-${each.key}-agent-service"
+  }
+}
+
+# MCP GitHub Server Task Definition
+resource "aws_ecs_task_definition" "mcp_github" {
+  family                   = "${var.environment}-mcp-github-agent"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 512
+  memory                   = 1024
+  execution_role_arn       = aws_iam_role.ecs_task_execution.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
+
+  container_definitions = jsonencode([{
+    name      = "mcp-github"
+    image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/mcp-github:latest"
+    essential = true
+
+    portMappings = [{
+      containerPort = 8100
+      hostPort      = 8100
+      protocol      = "tcp"
+    }]
+
+    environment = [
+      {
+        name  = "AWS_REGION"
+        value = data.aws_region.current.name
+      },
+      {
+        name  = "ENVIRONMENT"
+        value = var.environment
+      },
+      {
+        name  = "LOG_LEVEL"
+        value = "INFO"
+      }
+    ]
+
+    secrets = [
+      {
+        name      = "GITHUB_TOKEN"
+        valueFrom = "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${var.environment}-github-credentials"
+      }
+    ]
+
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.ecs.name
+        "awslogs-region"        = data.aws_region.current.name
+        "awslogs-stream-prefix" = "mcp-github"
+      }
+    }
+
+    healthCheck = {
+      command     = ["CMD-SHELL", "curl -f http://localhost:8100/health || exit 1"]
+      interval    = 30
+      timeout     = 5
+      retries     = 3
+      startPeriod = 60
+    }
+  }])
+
+  tags = {
+    Name = "${var.environment}-mcp-github"
+  }
+}
+
+# ECS Service for MCP GitHub Server
+resource "aws_ecs_service" "mcp_github" {
+  name            = "${var.environment}-mcp-github"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.mcp_github.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = false
+  }
+
+  # Enable ECS Service Discovery for internal DNS
+  service_registries {
+    registry_arn = aws_service_discovery_service.mcp_github.arn
+  }
+
+  enable_execute_command = true
+
+  tags = {
+    Name = "${var.environment}-mcp-github-service"
+  }
+}
+
+# Service Discovery for MCP GitHub Server
+resource "aws_service_discovery_service" "mcp_github" {
+  name = "${var.environment}-mcp-github"
+
+  dns_config {
+    namespace_id = aws_service_discovery_private_dns_namespace.main.id
+
+    dns_records {
+      ttl  = 10
+      type = "A"
+    }
+
+    routing_policy = "MULTIVALUE"
+  }
+
+  health_check_custom_config {
+    failure_threshold = 1
+  }
+
+  tags = {
+    Name = "${var.environment}-mcp-github-discovery"
+  }
+}
+
+# Service Discovery Namespace
+resource "aws_service_discovery_private_dns_namespace" "main" {
+  name = "${var.environment}-agentic.local"
+  vpc  = var.vpc_id
+
+  tags = {
+    Name = "${var.environment}-agentic-namespace"
   }
 }
