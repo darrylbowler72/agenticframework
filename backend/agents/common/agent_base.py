@@ -48,6 +48,10 @@ class BaseAgent(ABC):
         self.events_client = boto3.client('events')
         self.secrets_client = boto3.client('secretsmanager')
 
+        # DynamoDB table references (initialized from environment variables)
+        self.workflows_table = self._init_dynamodb_table('WORKFLOWS_TABLE_NAME', 'workflows')
+        self.tasks_table = self._init_dynamodb_table('TASKS_TABLE_NAME', 'tasks')
+
         # Claude API client (will be initialized lazily)
         self._anthropic_client: Optional[anthropic.Anthropic] = None
 
@@ -85,6 +89,41 @@ class BaseAgent(ABC):
         logger.addHandler(handler)
 
         return logger
+
+    def _init_dynamodb_table(self, env_var_name: str, default_table_suffix: str):
+        """
+        Initialize a DynamoDB table reference.
+
+        Args:
+            env_var_name: Environment variable name for the table
+            default_table_suffix: Default table name suffix (will be prefixed with environment)
+
+        Returns:
+            DynamoDB Table resource or None if table not configured
+        """
+        try:
+            # Check for environment variable override
+            table_name = os.getenv(env_var_name)
+
+            # If not set, use default with environment prefix
+            if not table_name:
+                table_name = f"{self.environment}-{default_table_suffix}"
+
+            # Get table resource
+            table = self.dynamodb.Table(table_name)
+
+            # Verify table exists by checking its table_status
+            # This will raise an exception if table doesn't exist
+            table.load()
+
+            return table
+
+        except Exception as e:
+            # Table doesn't exist or can't be accessed - this is OK for some agents
+            # Log at debug level to avoid noise
+            if hasattr(self, 'logger'):
+                self.logger.debug(f"DynamoDB table not initialized for {env_var_name}: {e}")
+            return None
 
     async def get_secret(self, secret_name: str) -> Dict[str, Any]:
         """
