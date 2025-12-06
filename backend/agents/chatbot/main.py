@@ -117,6 +117,139 @@ class ChatbotAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error saving session: {e}")
 
+    async def create_github_repository(
+        self,
+        repo_name: str,
+        description: str = "",
+        private: bool = False,
+        auto_init: bool = True
+    ) -> Dict:
+        """
+        Create a GitHub repository.
+
+        Args:
+            repo_name: Name of the repository
+            description: Repository description
+            private: Whether the repository should be private
+            auto_init: Initialize with README
+
+        Returns:
+            Repository creation result
+        """
+        try:
+            client, owner = await self._get_github_client()
+            user = client.get_user()
+
+            repo = user.create_repo(
+                name=repo_name,
+                description=description,
+                private=private,
+                auto_init=auto_init
+            )
+
+            self.logger.info(f"Created repository: {repo.full_name}")
+
+            return {
+                "success": True,
+                "repository": {
+                    "name": repo.name,
+                    "full_name": repo.full_name,
+                    "url": repo.html_url,
+                    "description": repo.description,
+                    "private": repo.private,
+                    "default_branch": repo.default_branch
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error creating repository: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    async def delete_github_repository(self, repo_name: str) -> Dict:
+        """
+        Delete a GitHub repository.
+
+        Args:
+            repo_name: Name of the repository to delete
+
+        Returns:
+            Deletion result
+        """
+        try:
+            client, owner = await self._get_github_client()
+            repo = client.get_repo(f"{owner}/{repo_name}")
+            repo.delete()
+
+            self.logger.info(f"Deleted repository: {owner}/{repo_name}")
+
+            return {
+                "success": True,
+                "repository": {
+                    "name": repo_name,
+                    "full_name": f"{owner}/{repo_name}"
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error deleting repository: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    async def list_github_repositories(self, max_repos: int = 30) -> Dict:
+        """
+        List GitHub repositories for the authenticated user.
+
+        Args:
+            max_repos: Maximum number of repositories to return
+
+        Returns:
+            List of repositories
+        """
+        try:
+            client, owner = await self._get_github_client()
+            user = client.get_user()
+            repos = user.get_repos()
+
+            repository_list = []
+            count = 0
+            for repo in repos:
+                if count >= max_repos:
+                    break
+
+                repository_list.append({
+                    "name": repo.name,
+                    "full_name": repo.full_name,
+                    "url": repo.html_url,
+                    "description": repo.description,
+                    "private": repo.private,
+                    "language": repo.language,
+                    "stars": repo.stargazers_count,
+                    "forks": repo.forks_count,
+                    "updated_at": repo.updated_at.isoformat() if repo.updated_at else None
+                })
+                count += 1
+
+            self.logger.info(f"Listed {len(repository_list)} repositories for {owner}")
+
+            return {
+                "success": True,
+                "owner": owner,
+                "count": len(repository_list),
+                "repositories": repository_list
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error listing repositories: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
     async def analyze_intent(self, message: str, conversation_history: List[Dict]) -> Dict:
         """Use Claude to analyze user intent and determine action."""
 
@@ -132,11 +265,12 @@ You can help users with:
 1. **Create Workflows** - Plan and decompose DevOps tasks into executable workflows
 2. **Generate Code** - Create microservices, infrastructure code, CI/CD pipelines
 3. **Remediate Issues** - Analyze and fix CI/CD pipeline failures
-4. **General Help** - Answer questions about DevOps, the framework, or provide guidance
+4. **GitHub Operations** - Create, delete, and list repositories on GitHub (owner: darrylbowler72)
+5. **General Help** - Answer questions about DevOps, the framework, or provide guidance
 
 Analyze the user's message and respond with JSON in this format:
 {
-  "intent": "workflow|codegen|remediation|help|general",
+  "intent": "workflow|codegen|remediation|github|help|general",
   "action_needed": true/false,
   "parameters": {
     // Extract relevant parameters based on intent
@@ -148,6 +282,7 @@ For action_needed=true, extract parameters:
 - workflow: {"description": "...", "environment": "dev/staging/prod"}
 - codegen: {"service_name": "...", "language": "...", "database": "...", "api_type": "..."}
 - remediation: {"pipeline_id": "...", "project_id": "..."}
+- github: {"operation": "create|delete|list", "repo_name": "...", "description": "...", "private": true/false, "max_repos": 30}
 
 Be friendly, helpful, and conversational. If you need more information, ask the user."""
 
@@ -220,6 +355,26 @@ Analyze the intent and provide your response in JSON format."""
                     )
                     return response.json()
 
+                elif intent == "github":
+                    operation = parameters.get("operation")
+                    if operation == "create":
+                        return await self.create_github_repository(
+                            repo_name=parameters.get("repo_name", ""),
+                            description=parameters.get("description", ""),
+                            private=parameters.get("private", False),
+                            auto_init=parameters.get("auto_init", True)
+                        )
+                    elif operation == "delete":
+                        return await self.delete_github_repository(
+                            repo_name=parameters.get("repo_name", "")
+                        )
+                    elif operation == "list":
+                        return await self.list_github_repositories(
+                            max_repos=parameters.get("max_repos", 30)
+                        )
+                    else:
+                        return {"error": f"Unknown GitHub operation: {operation}"}
+
                 else:
                     return {"info": f"Intent '{intent}' does not require backend agent execution"}
 
@@ -266,6 +421,28 @@ Analyze the intent and provide your response in JSON format."""
                 assistant_message += f"\n\n✅ Service generated! {action_result.get('files_generated', 0)} files created."
             elif intent_analysis['intent'] == 'remediation':
                 assistant_message += f"\n\n✅ Remediation initiated!"
+            elif intent_analysis['intent'] == 'github':
+                if action_result.get('success'):
+                    operation = intent_analysis.get('parameters', {}).get('operation')
+                    if operation == 'create':
+                        repo = action_result.get('repository', {})
+                        assistant_message += f"\n\n✅ Repository created successfully!"
+                        assistant_message += f"\n- Name: {repo.get('full_name')}"
+                        assistant_message += f"\n- URL: {repo.get('url')}"
+                        assistant_message += f"\n- Private: {repo.get('private')}"
+                    elif operation == 'delete':
+                        repo = action_result.get('repository', {})
+                        assistant_message += f"\n\n✅ Repository deleted successfully!"
+                        assistant_message += f"\n- Name: {repo.get('full_name')}"
+                    elif operation == 'list':
+                        count = action_result.get('count', 0)
+                        owner = action_result.get('owner', 'N/A')
+                        repos = action_result.get('repositories', [])
+                        assistant_message += f"\n\n✅ Found {count} repositories for {owner}:"
+                        for repo in repos[:10]:  # Show first 10
+                            assistant_message += f"\n- {repo.get('name')} ({repo.get('language', 'N/A')}) - {repo.get('description', 'No description')}"
+                        if count > 10:
+                            assistant_message += f"\n... and {count - 10} more repositories"
 
         # Add assistant message
         messages.append({
