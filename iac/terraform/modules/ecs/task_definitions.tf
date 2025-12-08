@@ -47,7 +47,7 @@ resource "aws_ecs_task_definition" "agents" {
 
   container_definitions = jsonencode([{
     name      = "${each.key}-agent"
-    image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/${each.key}-agent:latest"
+    image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/${each.key}-agent:${var.agent_image_version}"
     essential = true
 
     portMappings = [{
@@ -60,6 +60,10 @@ resource "aws_ecs_task_definition" "agents" {
       {
         name  = "AWS_REGION"
         value = data.aws_region.current.name
+      },
+      {
+        name  = "AWS_ACCOUNT_ID"
+        value = data.aws_caller_identity.current.account_id
       },
       {
         name  = "ENVIRONMENT"
@@ -184,7 +188,7 @@ resource "aws_ecs_task_definition" "mcp_github" {
 
   container_definitions = jsonencode([{
     name      = "mcp-github"
-    image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/mcp-github:latest"
+    image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/mcp-github:${var.agent_image_version}"
     essential = true
 
     portMappings = [{

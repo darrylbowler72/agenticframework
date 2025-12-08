@@ -22,3 +22,9 @@ variable "alb_dns_name" {
   type        = string
   default     = ""
 }
+
+variable "agent_image_version" {
+  description = "Version tag for agent container images"
+  type        = string
+  default     = "latest"
+}

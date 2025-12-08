@@ -631,8 +631,13 @@ See documentation for more details.
             # Combine all files into a JSON structure
             artifact = json.dumps(files, indent=2)
 
+            # Get bucket name from environment or construct from AWS account
+            environment = os.getenv('ENVIRONMENT', 'dev')
+            aws_account_id = os.getenv('AWS_ACCOUNT_ID', '773550624765')
+            bucket_name = f"{environment}-agent-artifacts-{aws_account_id}"
+
             await self.store_artifact_s3(
-                bucket='agent-artifacts-dev',  # TODO: Make configurable
+                bucket=bucket_name,
                 key=key,
                 data=artifact.encode('utf-8'),
                 metadata={
@@ -640,6 +645,7 @@ See documentation for more details.
                     'file_count': str(len(files))
                 }
             )
+            self.logger.info(f"Stored artifacts in S3: s3://{bucket_name}/{key}")
         except Exception as e:
             self.logger.warning(f"Could not store artifacts in S3: {e}")
 
@@ -662,8 +668,11 @@ See documentation for more details.
             self.logger.warning("MCP GitHub client not available, skipping repo creation")
             return f"https://github.com/placeholder/{service_name}"
 
+        repo_url = ""
+        repo_exists = False
+
         try:
-            # Create repository via MCP
+            # Try to create repository via MCP
             repo_result = await self.github_client.create_repository(
                 name=service_name,
                 description=f'Auto-generated microservice: {service_name}',
@@ -674,26 +683,49 @@ See documentation for more details.
             repo_url = repo_result.get('html_url', '')
             self.logger.info(f"Created repository via MCP: {repo_url}")
 
-            # Create files via MCP
+        except Exception as e:
+            error_str = str(e)
+
+            # Check if repository already exists (422 error)
+            if "422" in error_str or "already exists" in error_str.lower():
+                self.logger.info(f"Repository {service_name} already exists, will push files to it")
+                repo_exists = True
+
+                # Try to get the existing repository URL
+                try:
+                    repo_info = await self.github_client.get_repository(service_name)
+                    repo_url = repo_info.get('html_url', f"https://github.com/placeholder/{service_name}")
+                except Exception as get_error:
+                    self.logger.warning(f"Could not get repository info: {get_error}")
+                    repo_url = f"https://github.com/placeholder/{service_name}"
+            else:
+                self.logger.error(f"Error creating GitHub repository via MCP: {e}")
+                return f"https://github.com/placeholder/{service_name}"
+
+        # Push files to repository (whether new or existing)
+        try:
+            files_pushed = 0
             for file_path, content in files.items():
                 try:
                     await self.github_client.create_file(
                         repo_name=service_name,
                         file_path=file_path,
                         content=content,
-                        message=f"Add {file_path}",
+                        message=f"Add {file_path}" if not repo_exists else f"Update {file_path}",
                         branch="main"
                     )
-                    self.logger.info(f"Created file via MCP: {file_path}")
+                    files_pushed += 1
+                    self.logger.info(f"{'Created' if not repo_exists else 'Updated'} file via MCP: {file_path}")
                 except Exception as e:
-                    self.logger.warning(f"Could not create file {file_path} via MCP: {e}")
+                    self.logger.warning(f"Could not create/update file {file_path} via MCP: {e}")
                     continue
 
+            self.logger.info(f"Successfully pushed {files_pushed}/{len(files)} files to {service_name}")
             return repo_url
 
         except Exception as e:
-            self.logger.error(f"Error creating GitHub repository via MCP: {e}")
-            return f"https://github.com/placeholder/{service_name}"
+            self.logger.error(f"Error pushing files to repository: {e}")
+            return repo_url if repo_url else f"https://github.com/placeholder/{service_name}"
 
 
 # Initialize agent

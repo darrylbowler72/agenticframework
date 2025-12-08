@@ -28,3 +28,9 @@ variable "project_name" {
   type        = string
   default     = "devops-agentic-framework"
 }
+
+variable "agent_image_version" {
+  description = "Version tag for agent container images"
+  type        = string
+  default     = "latest"
+}
