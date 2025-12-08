@@ -13,4 +13,4 @@ availability_zones = [
 
 project_name = "devops-agentic-framework"
 
-agent_image_version = "1.0.1"
+agent_image_version = "1.0.2"

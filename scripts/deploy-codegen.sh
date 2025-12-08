@@ -15,6 +15,16 @@ NC='\033[0m' # No Color
 
 echo -e "${GREEN}=== CodeGen Agent Deployment Script ===${NC}"
 
+# Check for uncommitted changes in backend/agents/codegen
+cd "$PROJECT_ROOT"
+if ! git diff --quiet HEAD -- backend/agents/codegen/ backend/agents/common/ || \
+   ! git diff --cached --quiet HEAD -- backend/agents/codegen/ backend/agents/common/; then
+    echo -e "${RED}ERROR: Uncommitted changes detected in backend/agents/codegen/ or backend/agents/common/${NC}"
+    echo -e "${YELLOW}Please commit your changes before deploying to ensure the container includes all fixes.${NC}"
+    echo -e "${YELLOW}Run: git status${NC}"
+    exit 1
+fi
+
 # Read version from VERSION file
 VERSION=$(cat "$PROJECT_ROOT/backend/VERSION" | tr -d '\n\r' | xargs)
 echo -e "${GREEN}Version:${NC} $VERSION"
