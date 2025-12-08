@@ -631,10 +631,9 @@ See documentation for more details.
             # Combine all files into a JSON structure
             artifact = json.dumps(files, indent=2)
 
-            # Get bucket name from environment or construct from AWS account
-            environment = os.getenv('ENVIRONMENT', 'dev')
+            # Get bucket name - base class will prepend environment automatically
             aws_account_id = os.getenv('AWS_ACCOUNT_ID', '773550624765')
-            bucket_name = f"{environment}-agent-artifacts-{aws_account_id}"
+            bucket_name = f"agent-artifacts-{aws_account_id}"
 
             await self.store_artifact_s3(
                 bucket=bucket_name,
