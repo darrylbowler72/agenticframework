@@ -97,11 +97,14 @@ module "lambda_planner" {
 module "ecs" {
   source = "./modules/ecs"
 
-  environment         = var.environment
-  vpc_id              = module.vpc.vpc_id
-  private_subnet_ids  = module.vpc.private_subnet_ids
-  public_subnet_ids   = module.vpc.public_subnet_ids
-  agent_image_version = var.agent_image_version
+  environment                = var.environment
+  vpc_id                     = module.vpc.vpc_id
+  private_subnet_ids         = module.vpc.private_subnet_ids
+  public_subnet_ids          = module.vpc.public_subnet_ids
+  planner_image_version      = var.planner_image_version
+  codegen_image_version      = var.codegen_image_version
+  remediation_image_version  = var.remediation_image_version
+  chatbot_image_version      = var.chatbot_image_version
 }
 
 # Secrets Manager

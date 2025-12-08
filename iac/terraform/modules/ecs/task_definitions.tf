@@ -27,6 +27,14 @@ locals {
       environment = "DYNAMODB_TABLE"
     }
   }
+
+  # Map agent names to their version variables
+  agent_versions = {
+    planner     = var.planner_image_version
+    codegen     = var.codegen_image_version
+    remediation = var.remediation_image_version
+    chatbot     = var.chatbot_image_version
+  }
 }
 
 # Get AWS account ID
@@ -47,7 +55,7 @@ resource "aws_ecs_task_definition" "agents" {
 
   container_definitions = jsonencode([{
     name      = "${each.key}-agent"
-    image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/${each.key}-agent:${var.agent_image_version}"
+    image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/${each.key}-agent:${local.agent_versions[each.key]}"
     essential = true
 
     portMappings = [{

@@ -74,8 +74,8 @@ echo "Image pushed with digest: $IMAGE_DIGEST"
 echo -e "\n${GREEN}Step 6: Updating Terraform${NC}"
 cd "$PROJECT_ROOT/iac/terraform"
 
-# Update the tfvars file with new version
-sed -i "s/agent_image_version = \".*\"/agent_image_version = \"$VERSION\"/" \
+# Update the tfvars file with new version (only CodeGen)
+sed -i "s/codegen_image_version *= *\".*\"/codegen_image_version = \"$VERSION\"/" \
   environments/$ENVIRONMENT/terraform.tfvars
 
 # Apply Terraform changes

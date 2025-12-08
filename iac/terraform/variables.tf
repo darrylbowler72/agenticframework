@@ -29,8 +29,26 @@ variable "project_name" {
   default     = "devops-agentic-framework"
 }
 
-variable "agent_image_version" {
-  description = "Version tag for agent container images"
+variable "planner_image_version" {
+  description = "Version tag for planner agent container image"
+  type        = string
+  default     = "latest"
+}
+
+variable "codegen_image_version" {
+  description = "Version tag for codegen agent container image"
+  type        = string
+  default     = "latest"
+}
+
+variable "remediation_image_version" {
+  description = "Version tag for remediation agent container image"
+  type        = string
+  default     = "latest"
+}
+
+variable "chatbot_image_version" {
+  description = "Version tag for chatbot agent container image"
   type        = string
   default     = "latest"
 }
