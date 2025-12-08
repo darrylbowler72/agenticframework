@@ -78,6 +78,10 @@ resource "aws_ecs_task_definition" "agents" {
         value = var.environment
       },
       {
+        name  = "AGENT_VERSION"
+        value = local.agent_versions[each.key]
+      },
+      {
         name  = "LOG_LEVEL"
         value = "INFO"
       },
