@@ -196,7 +196,7 @@ resource "aws_ecs_task_definition" "mcp_github" {
 
   container_definitions = jsonencode([{
     name      = "mcp-github"
-    image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/mcp-github:${var.agent_image_version}"
+    image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/mcp-github:20251205-174916"
     essential = true
 
     portMappings = [{
