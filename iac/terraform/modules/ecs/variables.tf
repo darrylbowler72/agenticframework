@@ -17,3 +17,8 @@ variable "public_subnet_ids" {
   description = "List of public subnet IDs"
   type        = list(string)
 }
+variable "alb_dns_name" {
+  description = "ALB DNS name for internal agent communication"
+  type        = string
+  default     = ""
+}

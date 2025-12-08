@@ -74,11 +74,12 @@ class ChatbotAgent(BaseAgent):
         self.environment = os.getenv('ENVIRONMENT', 'dev')
         self.sessions_table = self.dynamodb.Table(f'{self.environment}-chatbot-sessions')
 
-        # Internal API endpoints for agents
+        # Internal API endpoints for agents - use environment variable or fallback to hardcoded
+        alb_base_url = os.getenv('INTERNAL_ALB_URL', 'http://internal-dev-agents-alb-1798962120.us-east-1.elb.amazonaws.com')
         self.agent_endpoints = {
-            'planner': 'http://internal-dev-agents-alb-2094161508.us-east-1.elb.amazonaws.com/workflows',
-            'codegen': 'http://internal-dev-agents-alb-2094161508.us-east-1.elb.amazonaws.com/generate',
-            'remediation': 'http://internal-dev-agents-alb-2094161508.us-east-1.elb.amazonaws.com/remediate'
+            'planner': f'{alb_base_url}/workflows',
+            'codegen': f'{alb_base_url}/generate',
+            'remediation': f'{alb_base_url}/remediate'
         }
 
     async def process_task(self, task_data: Dict) -> Dict:
@@ -542,10 +543,11 @@ async def health_check():
 @app.get("/dev/api/agents/health")
 async def get_agents_health():
     """Get health status of all agents."""
+    alb_base_url = os.getenv('INTERNAL_ALB_URL', 'http://internal-dev-agents-alb-1798962120.us-east-1.elb.amazonaws.com')
     agents = {
-        "planner": "http://internal-dev-agents-alb-2094161508.us-east-1.elb.amazonaws.com/planner/health",
-        "codegen": "http://internal-dev-agents-alb-2094161508.us-east-1.elb.amazonaws.com/codegen/health",
-        "remediation": "http://internal-dev-agents-alb-2094161508.us-east-1.elb.amazonaws.com/remediation/health",
+        "planner": f"{alb_base_url}/planner/health",
+        "codegen": f"{alb_base_url}/codegen/health",
+        "remediation": f"{alb_base_url}/remediation/health",
         "chatbot": "healthy"  # Self
     }
 

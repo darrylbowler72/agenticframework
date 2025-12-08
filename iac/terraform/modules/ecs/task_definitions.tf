@@ -56,7 +56,7 @@ resource "aws_ecs_task_definition" "agents" {
       protocol      = "tcp"
     }]
 
-    environment = [
+    environment = concat([
       {
         name  = "AWS_REGION"
         value = data.aws_region.current.name
@@ -73,7 +73,10 @@ resource "aws_ecs_task_definition" "agents" {
         name  = "MCP_GITHUB_URL"
         value = "http://${var.environment}-mcp-github.${var.environment}-agentic.local:8100"
       }
-    ]
+    ], each.key == "chatbot" ? [{
+      name  = "INTERNAL_ALB_URL"
+      value = "http://${aws_lb.agents.dns_name}"
+    }] : [])
 
     secrets = [
       {
