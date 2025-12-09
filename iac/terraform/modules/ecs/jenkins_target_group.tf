@@ -13,9 +13,9 @@ resource "aws_lb_target_group" "jenkins" {
     unhealthy_threshold = 3
     timeout             = 5
     interval            = 30
-    path                = "/login"
+    path                = "/jenkins/login"
     protocol            = "HTTP"
-    matcher             = "200"
+    matcher             = "200,403"
   }
 
   deregistration_delay = 30

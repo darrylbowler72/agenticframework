@@ -16,7 +16,7 @@ class JenkinsClient:
         Initialize Jenkins client.
 
         Args:
-            jenkins_url: Base URL of Jenkins server (e.g., http://54.87.173.145:8080)
+            jenkins_url: Base URL of Jenkins server (e.g., http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins)
             username: Jenkins username
             password: Jenkins password or API token
         """

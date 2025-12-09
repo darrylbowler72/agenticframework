@@ -366,7 +366,7 @@ For action_needed=true, extract parameters:
 - codegen: {"service_name": "...", "language": "...", "database": "...", "api_type": "..."}
 - remediation: {"pipeline_id": "...", "project_id": "..."}
 - github: {"operation": "create_repo|delete_repo|list_repos|create_branch|create_gitflow", "repo_name": "...", "description": "...", "private": true/false, "max_repos": 30, "branch_name": "...", "from_branch": "main"}
-- jenkins: {"operation": "list_jobs|get_job|test_connection", "job_name": "...", "jenkins_url": "http://54.87.173.145:8080", "username": "admin", "password": "admin"}
+- jenkins: {"operation": "list_jobs|get_job|test_connection", "job_name": "...", "jenkins_url": "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins", "username": "admin", "password": "admin"}
 - migration: {"jenkinsfile_content": "...", "project_name": "...", "repository_url": "..."}
 
 GitHub operation notes:
@@ -455,7 +455,7 @@ Analyze the intent and provide your response in JSON format."""
 
                 elif intent == "jenkins":
                     operation = parameters.get("operation")
-                    jenkins_url = parameters.get("jenkins_url", "http://54.87.173.145:8080")
+                    jenkins_url = parameters.get("jenkins_url", "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins")
                     username = parameters.get("username", "admin")
                     password = parameters.get("password", "admin")
 

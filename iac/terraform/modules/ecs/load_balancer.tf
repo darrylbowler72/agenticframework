@@ -7,19 +7,19 @@ resource "aws_security_group" "alb" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description = "Allow HTTP from VPC"
+    description = "Allow HTTP from anywhere"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    description = "Allow HTTPS from VPC"
+    description = "Allow HTTPS from anywhere"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
@@ -43,13 +43,13 @@ resource "aws_security_group" "alb" {
   }
 }
 
-# Application Load Balancer (internal, for VPC Link)
+# Application Load Balancer (internet-facing for Jenkins access)
 resource "aws_lb" "agents" {
   name               = "${var.environment}-agents-alb"
-  internal           = true
+  internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = var.private_subnet_ids
+  subnets            = var.public_subnet_ids
 
   enable_deletion_protection = false
   enable_http2              = true

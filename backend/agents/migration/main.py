@@ -482,7 +482,7 @@ class GitHubConnectionRequest(BaseModel):
 
 class MigrateJobRequest(BaseModel):
     """Request to migrate a Jenkins job to GitHub."""
-    jenkins_url: str = "http://54.87.173.145:8080"
+    jenkins_url: str = "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins"
     jenkins_username: str = "admin"
     jenkins_password: str = "admin"
     job_name: str
@@ -494,7 +494,7 @@ class MigrateJobRequest(BaseModel):
 
 class CreateJobRequest(BaseModel):
     """Request to create a Jenkins job."""
-    jenkins_url: str = "http://54.87.173.145:8080"
+    jenkins_url: str = "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins"
     jenkins_username: str = "admin"
     jenkins_password: str = "admin"
     job_name: str
@@ -505,7 +505,7 @@ class CreateJobRequest(BaseModel):
 @app.get("/migration/jenkins/test")
 @app.get("/dev/migration/jenkins/test")
 async def test_jenkins_connection(
-    jenkins_url: str = "http://54.87.173.145:8080",
+    jenkins_url: str = "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins",
     username: str = "admin",
     password: str = "admin"
 ):
@@ -522,7 +522,7 @@ async def test_jenkins_connection(
 @app.get("/migration/jenkins/jobs")
 @app.get("/dev/migration/jenkins/jobs")
 async def list_jenkins_jobs(
-    jenkins_url: str = "http://54.87.173.145:8080",
+    jenkins_url: str = "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins",
     username: str = "admin",
     password: str = "admin"
 ):
@@ -530,7 +530,7 @@ async def list_jenkins_jobs(
     List all Jenkins jobs.
 
     Query parameters:
-    - jenkins_url: Jenkins server URL (default: http://54.87.173.145:8080)
+    - jenkins_url: Jenkins server URL (default: http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins)
     - username: Jenkins username (default: admin)
     - password: Jenkins password/token (default: admin)
     """
@@ -581,7 +581,7 @@ async def create_jenkins_job(request: CreateJobRequest):
 @app.get("/dev/migration/jenkins/jobs/{job_name}")
 async def get_jenkins_job_details(
     job_name: str,
-    jenkins_url: str = "http://54.87.173.145:8080",
+    jenkins_url: str = "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins",
     username: str = "admin",
     password: str = "admin"
 ):
@@ -734,7 +734,7 @@ async def test_github_connection(token: str):
 @app.get("/migration/integration/test")
 @app.get("/dev/migration/integration/test")
 async def test_full_integration(
-    jenkins_url: str = "http://54.87.173.145:8080",
+    jenkins_url: str = "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins",
     jenkins_username: str = "admin",
     jenkins_password: str = "admin",
     github_token: Optional[str] = None
