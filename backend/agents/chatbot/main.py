@@ -375,9 +375,14 @@ GitHub operation notes:
 - "create_gitflow": Create standard gitflow branches (develop, feature/*, release/*, hotfix/*)
 
 Jenkins operation notes:
-- "list_jobs": List all Jenkins jobs (also triggered by: "show jenkins jobs", "get jenkins jobs", "list jenkins pipelines")
+- "list_jobs": List all Jenkins jobs (ALWAYS set action_needed=true when user asks to: "list", "show", "get", "display" Jenkins jobs or pipelines)
 - "get_job": Get details about a specific Jenkins job (requires job_name)
 - "test_connection": Test connection to Jenkins server
+
+**IMPORTANT**: When the user asks to list/show/get Jenkins jobs or pipelines, you MUST:
+1. Set "action_needed": true
+2. Set "intent": "jenkins"
+3. Set "parameters": {"operation": "list_jobs"}
 
 Be friendly, helpful, and conversational. If you need more information, ask the user."""
 
