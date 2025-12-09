@@ -46,3 +46,15 @@ variable "chatbot_image_version" {
   type        = string
   default     = "latest"
 }
+
+variable "migration_image_version" {
+  description = "Docker image version for migration agent"
+  type        = string
+  default     = "1.0.0"
+}
+
+variable "jenkins_image_version" {
+  description = "Docker image version for Jenkins"
+  type        = string
+  default     = "1.0.0"
+}

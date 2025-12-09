@@ -25,7 +25,7 @@ resource "aws_security_group" "alb" {
   ingress {
     description = "Allow health checks from VPC"
     from_port   = 8000
-    to_port     = 8003
+    to_port     = 8004
     protocol    = "tcp"
     cidr_blocks = ["10.0.0.0/16"]
   }
@@ -157,6 +157,31 @@ resource "aws_lb_target_group" "chatbot" {
 
   tags = {
     Name = "${var.environment}-chatbot-tg"
+  }
+}
+
+resource "aws_lb_target_group" "migration" {
+  name        = "${var.environment}-migration-tg"
+  port        = 8004
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    timeout             = 5
+    interval            = 30
+    path                = "/health"
+    protocol            = "HTTP"
+    matcher             = "200"
+  }
+
+  deregistration_delay = 30
+
+  tags = {
+    Name = "${var.environment}-migration-tg"
   }
 }
 
@@ -375,11 +400,77 @@ resource "aws_lb_listener_rule" "agents_health" {
   }
 }
 
+# Migration agent routes
+resource "aws_lb_listener_rule" "migration_migrate" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 110
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.migration.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/migrate", "/dev/migrate"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "migration_analyze" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 111
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.migration.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/analyze", "/dev/analyze"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "migration_health" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 112
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.migration.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/migration/health", "/dev/migration/health"]
+    }
+  }
+}
+
+# Jenkins Integration - wildcard route for all /migration/* paths
+resource "aws_lb_listener_rule" "migration_wildcard" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 113
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.migration.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/migration/*", "/dev/migration/*"]
+    }
+  }
+}
+
 # Update ECS task security group to allow traffic from ALB
 resource "aws_security_group_rule" "ecs_from_alb" {
   type                     = "ingress"
   from_port                = 8000
-  to_port                  = 8003
+  to_port                  = 8004
   protocol                 = "tcp"
   security_group_id        = aws_security_group.ecs_tasks.id
   source_security_group_id = aws_security_group.alb.id
@@ -409,6 +500,7 @@ output "target_group_arns" {
     codegen     = aws_lb_target_group.codegen.arn
     remediation = aws_lb_target_group.remediation.arn
     chatbot     = aws_lb_target_group.chatbot.arn
+    migration   = aws_lb_target_group.migration.arn
   }
 }
 

@@ -110,6 +110,13 @@ class ListRepositoriesRequest(BaseModel):
     limit: int = 10
 
 
+class CreateBranchRequest(BaseModel):
+    """Create branch in repository request."""
+    repo_name: str
+    branch_name: str
+    from_branch: str = "main"
+
+
 # MCP Tool Handlers
 
 @app.post("/mcp/call")
@@ -127,6 +134,8 @@ async def mcp_call(request: MCPRequest) -> MCPResponse:
             result = await create_repository(params)
         elif method == "github.create_file":
             result = await create_file(params)
+        elif method == "github.create_branch":
+            result = await create_branch(params)
         elif method == "github.get_workflow_run":
             result = await get_workflow_run(params)
         elif method == "github.list_repositories":
@@ -223,6 +232,49 @@ async def create_file(params: Dict[str, Any]) -> Dict[str, Any]:
 
     except GithubException as e:
         logger.error(f"GitHub API error creating file: {e}")
+        raise HTTPException(status_code=e.status, detail=e.data.get('message', str(e)))
+
+
+async def create_branch(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a branch in a GitHub repository."""
+    gh_client, owner = get_github_client()
+
+    repo_name = params.get('repo_name')
+    branch_name = params.get('branch_name')
+    from_branch = params.get('from_branch', 'main')
+
+    if not all([repo_name, branch_name]):
+        raise ValueError("repo_name and branch_name are required")
+
+    try:
+        # Get repository
+        if '/' in repo_name:
+            repo = gh_client.get_repo(repo_name)
+        else:
+            repo = gh_client.get_user().get_repo(repo_name)
+
+        # Get the source branch reference
+        source_branch = repo.get_branch(from_branch)
+        source_sha = source_branch.commit.sha
+
+        # Create the new branch
+        repo.create_git_ref(
+            ref=f"refs/heads/{branch_name}",
+            sha=source_sha
+        )
+
+        logger.info(f"Created branch {branch_name} in {repo_name} from {from_branch}")
+
+        return {
+            "branch_name": branch_name,
+            "repo_name": repo.name,
+            "from_branch": from_branch,
+            "sha": source_sha,
+            "url": f"{repo.html_url}/tree/{branch_name}"
+        }
+
+    except GithubException as e:
+        logger.error(f"GitHub API error creating branch: {e}")
         raise HTTPException(status_code=e.status, detail=e.data.get('message', str(e)))
 
 
@@ -362,20 +414,13 @@ async def get_repository(params: Dict[str, Any]) -> Dict[str, Any]:
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    try:
-        # Test GitHub connection
-        gh_client, owner = get_github_client()
-        user = gh_client.get_user()
-
-        return {
-            "status": "healthy",
-            "service": "mcp-github-server",
-            "github_user": user.login,
-            "version": "1.0.0"
-        }
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(status_code=503, detail=str(e))
+    # Basic health check - just verify service is running
+    # GitHub connection will be tested on actual API calls
+    return {
+        "status": "healthy",
+        "service": "mcp-github-server",
+        "version": "1.0.5"
+    }
 
 
 # MCP Server Information
@@ -428,6 +473,15 @@ async def mcp_info():
                 "description": "Get repository details",
                 "parameters": {
                     "repo_name": {"type": "string", "required": True}
+                }
+            },
+            {
+                "name": "github.create_branch",
+                "description": "Create a new branch in a repository",
+                "parameters": {
+                    "repo_name": {"type": "string", "required": True},
+                    "branch_name": {"type": "string", "required": True},
+                    "from_branch": {"type": "string", "required": False}
                 }
             }
         ]

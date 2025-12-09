@@ -1,0 +1,13 @@
+{
+  "session_id": "test-session-codegen-1765231191",
+  "message": "Okay, let me generate a sample Python Flask web application with a simple 'Hello World' endpoint for you. Please provide any additional details you'd like me to include, such as the specific functionality or features you need, and I'll generate the code accordingly.\n\n✅ Service generated! 12 files created.",
+  "agent_action": "codegen",
+  "action_result": {
+    "service_name": "hello-world-app",
+    "repository_url": "https://github.com/darrylbowler72/hello-world-app",
+    "artifact_s3_key": "codegen/hello-world-app/2025-12-08T21:59:54.621357",
+    "files_generated": 12,
+    "language": "python",
+    "database": "none"
+  }
+}

@@ -105,6 +105,7 @@ module "ecs" {
   codegen_image_version      = var.codegen_image_version
   remediation_image_version  = var.remediation_image_version
   chatbot_image_version      = var.chatbot_image_version
+  migration_image_version    = var.migration_image_version
 }
 
 # Secrets Manager

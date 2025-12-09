@@ -1,0 +1,39 @@
+{
+  "family": "dev-jenkins",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::773550624765:role/dev-ecs-task-execution-role",
+  "containerDefinitions": [
+    {
+      "name": "jenkins",
+      "image": "jenkins/jenkins:lts",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "JENKINS_OPTS",
+          "value": "--prefix=/jenkins"
+        },
+        {
+          "name": "JAVA_OPTS",
+          "value": "-Djenkins.install.runSetupWizard=false -Dhudson.security.csrf.GlobalCrumbIssuerConfiguration.DISABLE_CSRF_PROTECTION=true"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/aws/ecs/dev-agentic-cluster",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "jenkins"
+        }
+      }
+    }
+  ]
+}

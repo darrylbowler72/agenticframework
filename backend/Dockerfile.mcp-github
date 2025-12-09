@@ -2,12 +2,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 # Copy MCP server requirements and install dependencies
-COPY mcp-server/github/requirements.txt /app/requirements.txt
+COPY backend/mcp-server/github/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy MCP server code
-COPY mcp-server/github/ /app/
+COPY backend/mcp-server/github/ /app/
 
 # Set Python path
 ENV PYTHONPATH=/app

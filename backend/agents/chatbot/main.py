@@ -79,7 +79,8 @@ class ChatbotAgent(BaseAgent):
         self.agent_endpoints = {
             'planner': f'{alb_base_url}/workflows',
             'codegen': f'{alb_base_url}/generate',
-            'remediation': f'{alb_base_url}/remediate'
+            'remediation': f'{alb_base_url}/remediate',
+            'migration': f'{alb_base_url}/migrate'
         }
 
     async def process_task(self, task_data: Dict) -> Dict:
@@ -251,6 +252,85 @@ class ChatbotAgent(BaseAgent):
                 "error": str(e)
             }
 
+    async def call_mcp_github(self, method: str, params: Dict) -> Dict:
+        """
+        Call MCP GitHub server.
+
+        Args:
+            method: MCP method name (e.g., 'github.create_branch')
+            params: Method parameters
+
+        Returns:
+            MCP response
+        """
+        mcp_url = os.getenv('MCP_GITHUB_URL', 'http://dev-mcp-github.dev-agentic.local:8100')
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{mcp_url}/mcp/call",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": str(uuid.uuid4()),
+                        "method": method,
+                        "params": params
+                    }
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    if "error" in result:
+                        self.logger.error(f"MCP error: {result['error']}")
+                        return {"success": False, "error": result['error']}
+                    return {"success": True, "result": result.get("result", {})}
+                else:
+                    return {"success": False, "error": f"HTTP {response.status_code}: {response.text}"}
+
+        except Exception as e:
+            self.logger.error(f"Error calling MCP GitHub: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def create_github_branch(
+        self,
+        repo_name: str,
+        branch_name: str,
+        from_branch: str = "main"
+    ) -> Dict:
+        """
+        Create a branch in a GitHub repository via MCP server.
+
+        Args:
+            repo_name: Repository name
+            branch_name: New branch name
+            from_branch: Branch to create from
+
+        Returns:
+            Branch creation result
+        """
+        try:
+            result = await self.call_mcp_github(
+                "github.create_branch",
+                {
+                    "repo_name": repo_name,
+                    "branch_name": branch_name,
+                    "from_branch": from_branch
+                }
+            )
+
+            if result.get("success"):
+                branch_info = result.get("result", {})
+                self.logger.info(f"Created branch {branch_name} in {repo_name}")
+                return {
+                    "success": True,
+                    "branch": branch_info
+                }
+            else:
+                return result
+
+        except Exception as e:
+            self.logger.error(f"Error creating branch: {e}")
+            return {"success": False, "error": str(e)}
+
     async def analyze_intent(self, message: str, conversation_history: List[Dict]) -> Dict:
         """Use Claude to analyze user intent and determine action."""
 
@@ -266,12 +346,13 @@ You can help users with:
 1. **Create Workflows** - Plan and decompose DevOps tasks into executable workflows
 2. **Generate Code** - Create microservices, infrastructure code, CI/CD pipelines
 3. **Remediate Issues** - Analyze and fix CI/CD pipeline failures
-4. **GitHub Operations** - Create, delete, and list repositories on GitHub (owner: darrylbowler72)
-5. **General Help** - Answer questions about DevOps, the framework, or provide guidance
+4. **GitHub Operations** - Create/delete/list repositories, create branches, manage gitflow branching (owner: darrylbowler72)
+5. **Pipeline Migration** - Convert Jenkins pipelines to GitHub Actions workflows
+6. **General Help** - Answer questions about DevOps, the framework, or provide guidance
 
 Analyze the user's message and respond with JSON in this format:
 {
-  "intent": "workflow|codegen|remediation|github|help|general",
+  "intent": "workflow|codegen|remediation|github|migration|help|general",
   "action_needed": true/false,
   "parameters": {
     // Extract relevant parameters based on intent
@@ -280,10 +361,16 @@ Analyze the user's message and respond with JSON in this format:
 }
 
 For action_needed=true, extract parameters:
-- workflow: {"description": "...", "environment": "dev/staging/prod"}
+- workflow: {"description": "...", "environment": "dev/staging/prod", "template": "default", "requested_by": "user", "parameters": {}}
 - codegen: {"service_name": "...", "language": "...", "database": "...", "api_type": "..."}
 - remediation: {"pipeline_id": "...", "project_id": "..."}
-- github: {"operation": "create|delete|list", "repo_name": "...", "description": "...", "private": true/false, "max_repos": 30}
+- github: {"operation": "create_repo|delete_repo|list_repos|create_branch|create_gitflow", "repo_name": "...", "description": "...", "private": true/false, "max_repos": 30, "branch_name": "...", "from_branch": "main"}
+- migration: {"jenkinsfile_content": "...", "project_name": "...", "repository_url": "..."}
+
+GitHub operation notes:
+- "create_repo": Create a new repository
+- "create_branch": Create a single branch in an existing repo
+- "create_gitflow": Create standard gitflow branches (develop, feature/*, release/*, hotfix/*)
 
 Be friendly, helpful, and conversational. If you need more information, ask the user."""
 
@@ -328,7 +415,10 @@ Analyze the intent and provide your response in JSON format."""
                         json={
                             "description": parameters.get("description", ""),
                             "environment": parameters.get("environment", "dev"),
-                            "project_id": parameters.get("project_id", "default")
+                            "project_id": parameters.get("project_id", "default"),
+                            "template": parameters.get("template", "default"),
+                            "requested_by": parameters.get("requested_by", "chatbot-user"),
+                            "parameters": parameters.get("parameters", {})
                         }
                     )
                     return response.json()
@@ -356,23 +446,52 @@ Analyze the intent and provide your response in JSON format."""
                     )
                     return response.json()
 
+                elif intent == "migration":
+                    response = await client.post(
+                        self.agent_endpoints['migration'],
+                        json={
+                            "jenkinsfile_content": parameters.get("jenkinsfile_content", ""),
+                            "project_name": parameters.get("project_name", "project"),
+                            "repository_url": parameters.get("repository_url", "")
+                        }
+                    )
+                    return response.json()
+
                 elif intent == "github":
                     operation = parameters.get("operation")
-                    if operation == "create":
+                    if operation == "create_repo":
                         return await self.create_github_repository(
                             repo_name=parameters.get("repo_name", ""),
                             description=parameters.get("description", ""),
                             private=parameters.get("private", False),
                             auto_init=parameters.get("auto_init", True)
                         )
-                    elif operation == "delete":
+                    elif operation == "delete_repo":
                         return await self.delete_github_repository(
                             repo_name=parameters.get("repo_name", "")
                         )
-                    elif operation == "list":
+                    elif operation == "list_repos":
                         return await self.list_github_repositories(
                             max_repos=parameters.get("max_repos", 30)
                         )
+                    elif operation == "create_branch":
+                        return await self.create_github_branch(
+                            repo_name=parameters.get("repo_name", ""),
+                            branch_name=parameters.get("branch_name", ""),
+                            from_branch=parameters.get("from_branch", "main")
+                        )
+                    elif operation == "create_gitflow":
+                        # Create gitflow branches: develop, feature, release, hotfix
+                        repo_name = parameters.get("repo_name", "")
+                        results = []
+                        for branch in ["develop"]:  # Start with develop
+                            result = await self.create_github_branch(
+                                repo_name=repo_name,
+                                branch_name=branch,
+                                from_branch="main"
+                            )
+                            results.append({"branch": branch, "result": result})
+                        return {"success": True, "branches": results}
                     else:
                         return {"error": f"Unknown GitHub operation: {operation}"}
 
@@ -422,20 +541,31 @@ Analyze the intent and provide your response in JSON format."""
                 assistant_message += f"\n\n✅ Service generated! {action_result.get('files_generated', 0)} files created."
             elif intent_analysis['intent'] == 'remediation':
                 assistant_message += f"\n\n✅ Remediation initiated!"
+            elif intent_analysis['intent'] == 'migration':
+                if action_result.get('success'):
+                    report = action_result.get('migration_report', {})
+                    assistant_message += f"\n\n✅ Pipeline migrated successfully!"
+                    assistant_message += f"\n- Pipeline type: {report.get('pipeline_type')}"
+                    assistant_message += f"\n- Stages converted: {report.get('stages_converted')}"
+                    assistant_message += f"\n- Environment variables: {report.get('environment_variables')}"
+                    if action_result.get('warnings'):
+                        assistant_message += f"\n\n⚠️ Warnings:"
+                        for warning in action_result['warnings']:
+                            assistant_message += f"\n- {warning}"
             elif intent_analysis['intent'] == 'github':
                 if action_result.get('success'):
                     operation = intent_analysis.get('parameters', {}).get('operation')
-                    if operation == 'create':
+                    if operation == 'create_repo':
                         repo = action_result.get('repository', {})
                         assistant_message += f"\n\n✅ Repository created successfully!"
                         assistant_message += f"\n- Name: {repo.get('full_name')}"
                         assistant_message += f"\n- URL: {repo.get('url')}"
                         assistant_message += f"\n- Private: {repo.get('private')}"
-                    elif operation == 'delete':
+                    elif operation == 'delete_repo':
                         repo = action_result.get('repository', {})
                         assistant_message += f"\n\n✅ Repository deleted successfully!"
                         assistant_message += f"\n- Name: {repo.get('full_name')}"
-                    elif operation == 'list':
+                    elif operation == 'list_repos':
                         count = action_result.get('count', 0)
                         owner = action_result.get('owner', 'N/A')
                         repos = action_result.get('repositories', [])
@@ -444,6 +574,21 @@ Analyze the intent and provide your response in JSON format."""
                             assistant_message += f"\n- {repo.get('name')} ({repo.get('language', 'N/A')}) - {repo.get('description', 'No description')}"
                         if count > 10:
                             assistant_message += f"\n... and {count - 10} more repositories"
+                    elif operation == 'create_branch':
+                        branch = action_result.get('branch', {})
+                        assistant_message += f"\n\n✅ Branch created successfully!"
+                        assistant_message += f"\n- Branch: {branch.get('branch_name')}"
+                        assistant_message += f"\n- Repository: {branch.get('repo_name')}"
+                        assistant_message += f"\n- From: {branch.get('from_branch')}"
+                        assistant_message += f"\n- URL: {branch.get('url')}"
+                    elif operation == 'create_gitflow':
+                        branches = action_result.get('branches', [])
+                        assistant_message += f"\n\n✅ Gitflow branches created successfully!"
+                        for branch_result in branches:
+                            if branch_result.get('result', {}).get('success'):
+                                assistant_message += f"\n- ✅ {branch_result['branch']}"
+                            else:
+                                assistant_message += f"\n- ❌ {branch_result['branch']}: {branch_result.get('result', {}).get('error', 'Unknown error')}"
 
         # Add assistant message
         messages.append({
@@ -548,7 +693,8 @@ async def get_agents_health():
         "planner": f"{alb_base_url}/planner/health",
         "codegen": f"{alb_base_url}/codegen/health",
         "remediation": f"{alb_base_url}/remediation/health",
-        "chatbot": "healthy"  # Self
+        "chatbot": "healthy",  # Self
+        "migration": f"{alb_base_url}/migration/health"
     }
 
     health_status = {}

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Deploy CodeGen Agent with versioned container image
+# Deploy Chatbot Agent with versioned container image
 # This script builds, pushes, and deploys a specific version to avoid image caching issues
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,13 +13,13 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}=== CodeGen Agent Deployment Script ===${NC}"
+echo -e "${GREEN}=== Chatbot Agent Deployment Script ===${NC}"
 
-# Check for uncommitted changes in backend/agents/codegen
+# Check for uncommitted changes in backend/agents/chatbot
 cd "$PROJECT_ROOT"
-if ! git diff --quiet HEAD -- backend/agents/codegen/ backend/agents/common/ || \
-   ! git diff --cached --quiet HEAD -- backend/agents/codegen/ backend/agents/common/; then
-    echo -e "${RED}ERROR: Uncommitted changes detected in backend/agents/codegen/ or backend/agents/common/${NC}"
+if ! git diff --quiet HEAD -- backend/agents/chatbot/ backend/agents/common/ || \
+   ! git diff --cached --quiet HEAD -- backend/agents/chatbot/ backend/agents/common/; then
+    echo -e "${RED}ERROR: Uncommitted changes detected in backend/agents/chatbot/ or backend/agents/common/${NC}"
     echo -e "${YELLOW}Please commit your changes before deploying to ensure the container includes all fixes.${NC}"
     echo -e "${YELLOW}Run: git status${NC}"
     exit 1
@@ -28,17 +28,6 @@ fi
 # Read version from VERSION file
 VERSION=$(cat "$PROJECT_ROOT/backend/VERSION" | tr -d '\n\r' | xargs)
 echo -e "${GREEN}Version:${NC} $VERSION"
-
-# Extract version components for multi-level tagging (AWS best practice)
-VERSION_MAJOR=$(echo $VERSION | cut -d. -f1)
-VERSION_MINOR=$(echo $VERSION | cut -d. -f1,2)
-
-# Get git commit SHA for traceability (AWS best practice)
-GIT_COMMIT=$(git rev-parse --short HEAD)
-BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-echo -e "${GREEN}Git commit:${NC} $GIT_COMMIT"
-echo -e "${GREEN}Build date:${NC} $BUILD_DATE"
 
 # Get AWS account ID and region
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -51,49 +40,26 @@ echo -e "${GREEN}Environment:${NC} $ENVIRONMENT"
 
 # ECR repository details
 ECR_REPO="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
-IMAGE_NAME="codegen-agent"
+IMAGE_NAME="chatbot-agent"
 FULL_IMAGE="$ECR_REPO/$IMAGE_NAME:$VERSION"
 
-echo -e "\n${GREEN}Step 1: Building container image with metadata${NC}"
+echo -e "\n${GREEN}Step 1: Building container image${NC}"
 echo "Building: $FULL_IMAGE"
-echo "Tags: $VERSION, $VERSION_MINOR, $VERSION_MAJOR, sha-$GIT_COMMIT"
 cd "$PROJECT_ROOT"
 MSYS_NO_PATHCONV=1 podman build \
   --no-cache \
-  --label "version=$VERSION" \
-  --label "git.commit=$GIT_COMMIT" \
-  --label "build.date=$BUILD_DATE" \
-  --label "agent.name=codegen" \
   -t "$IMAGE_NAME:$VERSION" \
-  -f backend/Dockerfile.codegen .
+  -f backend/Dockerfile.chatbot .
 
 echo -e "\n${GREEN}Step 2: Logging in to ECR${NC}"
 MSYS_NO_PATHCONV=1 aws ecr get-login-password --region $AWS_REGION | \
   podman login --username AWS --password-stdin $ECR_REPO
 
-echo -e "\n${GREEN}Step 3: Tagging image (AWS multi-level versioning best practice)${NC}"
-# Tag with full semantic version (1.0.5)
-MSYS_NO_PATHCONV=1 podman tag "$IMAGE_NAME:$VERSION" "$ECR_REPO/$IMAGE_NAME:$VERSION"
-echo "  ✓ Tagged: $VERSION"
+echo -e "\n${GREEN}Step 3: Tagging image${NC}"
+MSYS_NO_PATHCONV=1 podman tag "$IMAGE_NAME:$VERSION" "$FULL_IMAGE"
 
-# Tag with major.minor version (1.0) - allows users to get latest patch
-MSYS_NO_PATHCONV=1 podman tag "$IMAGE_NAME:$VERSION" "$ECR_REPO/$IMAGE_NAME:$VERSION_MINOR"
-echo "  ✓ Tagged: $VERSION_MINOR"
-
-# Tag with major version (1) - allows users to get latest minor
-MSYS_NO_PATHCONV=1 podman tag "$IMAGE_NAME:$VERSION" "$ECR_REPO/$IMAGE_NAME:$VERSION_MAJOR"
-echo "  ✓ Tagged: $VERSION_MAJOR"
-
-# Tag with git commit SHA for traceability
-MSYS_NO_PATHCONV=1 podman tag "$IMAGE_NAME:$VERSION" "$ECR_REPO/$IMAGE_NAME:sha-$GIT_COMMIT"
-echo "  ✓ Tagged: sha-$GIT_COMMIT"
-
-echo -e "\n${GREEN}Step 4: Pushing all tags to ECR${NC}"
-MSYS_NO_PATHCONV=1 podman push "$ECR_REPO/$IMAGE_NAME:$VERSION"
-MSYS_NO_PATHCONV=1 podman push "$ECR_REPO/$IMAGE_NAME:$VERSION_MINOR"
-MSYS_NO_PATHCONV=1 podman push "$ECR_REPO/$IMAGE_NAME:$VERSION_MAJOR"
-MSYS_NO_PATHCONV=1 podman push "$ECR_REPO/$IMAGE_NAME:sha-$GIT_COMMIT"
-echo "  ✓ Pushed all tags"
+echo -e "\n${GREEN}Step 4: Pushing to ECR${NC}"
+MSYS_NO_PATHCONV=1 podman push "$FULL_IMAGE"
 
 # Verify image is in ECR
 echo -e "\n${GREEN}Step 5: Verifying image in ECR${NC}"
@@ -108,8 +74,8 @@ echo "Image pushed with digest: $IMAGE_DIGEST"
 echo -e "\n${GREEN}Step 6: Updating Terraform${NC}"
 cd "$PROJECT_ROOT/iac/terraform"
 
-# Update the tfvars file with new version (only CodeGen)
-sed -i "s/codegen_image_version *= *\".*\"/codegen_image_version = \"$VERSION\"/" \
+# Update the tfvars file with new version (only Chatbot)
+sed -i "s/chatbot_image_version *= *\".*\"/chatbot_image_version = \"$VERSION\"/" \
   environments/$ENVIRONMENT/terraform.tfvars
 
 # Apply Terraform changes
@@ -118,9 +84,9 @@ terraform init -backend-config=environments/$ENVIRONMENT/backend.tfvars > /dev/n
 terraform apply -var-file=environments/$ENVIRONMENT/terraform.tfvars -auto-approve
 
 echo -e "\n${GREEN}Step 7: Stopping old tasks to force image refresh${NC}"
-# Get running tasks for CodeGen
+# Get running tasks for Chatbot
 CLUSTER_NAME="$ENVIRONMENT-agentic-cluster"
-SERVICE_NAME="$ENVIRONMENT-codegen-agent"
+SERVICE_NAME="$ENVIRONMENT-chatbot-agent"
 
 TASK_ARNS=$(aws ecs list-tasks \
   --cluster $CLUSTER_NAME \
@@ -185,14 +151,14 @@ else
 fi
 
 echo -e "\n${GREEN}Step 10: Tagging git repository${NC}"
-GIT_TAG="codegen-v$VERSION"
+GIT_TAG="chatbot-v$VERSION"
 
 # Check if tag already exists
 if git rev-parse "$GIT_TAG" >/dev/null 2>&1; then
   echo -e "${YELLOW}Tag $GIT_TAG already exists, skipping tag creation${NC}"
 else
   echo "Creating git tag: $GIT_TAG"
-  git tag -a "$GIT_TAG" -m "Deploy CodeGen Agent v$VERSION
+  git tag -a "$GIT_TAG" -m "Deploy Chatbot Agent v$VERSION
 
 Container image: $FULL_IMAGE
 Image digest: $IMAGE_DIGEST
@@ -206,18 +172,4 @@ echo -e "\n${GREEN}=== Deployment Complete ===${NC}"
 echo -e "Version deployed: ${GREEN}$VERSION${NC}"
 echo -e "Image: ${GREEN}$FULL_IMAGE${NC}"
 echo -e "Digest: ${GREEN}$IMAGE_DIGEST${NC}"
-echo -e "Git commit: ${GREEN}$GIT_COMMIT${NC}"
 echo -e "Git tag: ${GREEN}$GIT_TAG${NC}"
-echo ""
-echo -e "${YELLOW}AWS Best Practices Applied:${NC}"
-echo "  ✓ Multi-level semantic versioning: $VERSION, $VERSION_MINOR, $VERSION_MAJOR"
-echo "  ✓ Git commit SHA tagging: sha-$GIT_COMMIT"
-echo "  ✓ Image metadata labels (version, git.commit, build.date)"
-echo "  ✓ Image digest for immutable reference: $IMAGE_DIGEST"
-echo ""
-echo -e "${YELLOW}Available image references:${NC}"
-echo "  $ECR_REPO/$IMAGE_NAME:$VERSION (recommended for production)"
-echo "  $ECR_REPO/$IMAGE_NAME:$VERSION_MINOR (latest patch)"
-echo "  $ECR_REPO/$IMAGE_NAME:$VERSION_MAJOR (latest minor)"
-echo "  $ECR_REPO/$IMAGE_NAME:sha-$GIT_COMMIT (git commit)"
-echo "  $ECR_REPO/$IMAGE_NAME@$IMAGE_DIGEST (immutable digest)"

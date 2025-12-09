@@ -52,3 +52,9 @@ variable "chatbot_image_version" {
   type        = string
   default     = "latest"
 }
+
+variable "migration_image_version" {
+  description = "Version tag for migration agent container image"
+  type        = string
+  default     = "latest"
+}

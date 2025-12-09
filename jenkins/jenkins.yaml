@@ -1,0 +1,18 @@
+jenkins:
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "admin"
+  authorizationStrategy:
+    globalMatrix:
+      permissions:
+        - "Overall/Administer:admin"
+        - "Overall/Read:authenticated"
+  remotingSecurity:
+    enabled: true
+
+unclassified:
+  location:
+    url: "http://jenkins:8080/jenkins"

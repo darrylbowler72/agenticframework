@@ -145,3 +145,84 @@ resource "aws_apigatewayv2_route" "agents_health" {
   route_key = "GET /api/agents/health"
   target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
 }
+
+# Routes for Migration Agent
+resource "aws_apigatewayv2_route" "migration_migrate" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /migrate"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "migration_analyze" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /analyze"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "migration_health" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /migration/health"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+# Jenkins Integration Routes
+resource "aws_apigatewayv2_route" "migration_jenkins_test" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /migration/jenkins/test"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "migration_jenkins_jobs" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /migration/jenkins/jobs"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "migration_jenkins_job_details" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /migration/jenkins/jobs/{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "migration_jenkins_migrate_job" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /migration/jenkins/migrate-job"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "migration_github_test" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /migration/github/test"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "migration_integration_test" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /migration/integration/test"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "migration_jenkins_create_job" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /migration/jenkins/create-job"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+# Jenkins UI Routes
+resource "aws_apigatewayv2_route" "jenkins_root_get" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /jenkins"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "jenkins_proxy_get" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /jenkins/{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "jenkins_proxy_post" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /jenkins/{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}

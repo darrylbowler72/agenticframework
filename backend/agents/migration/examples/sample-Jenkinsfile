@@ -1,0 +1,55 @@
+pipeline {
+    agent { label 'linux' }
+
+    environment {
+        NODE_ENV = 'production'
+        DATABASE_URL = 'postgresql://localhost:5432/mydb'
+        APP_VERSION = '1.0.0'
+    }
+
+    triggers {
+        cron('H 2 * * *')
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                sh 'npm install'
+                sh 'npm run build'
+                echo 'Build completed successfully'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh 'npm test'
+                junit 'reports/**/*.xml'
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                sh 'docker build -t myapp:${APP_VERSION} .'
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh 'kubectl apply -f k8s/deployment.yaml'
+                echo 'Deployment completed'
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'dist/**/*', fingerprint: true
+        }
+        success {
+            echo 'Pipeline succeeded!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
+}

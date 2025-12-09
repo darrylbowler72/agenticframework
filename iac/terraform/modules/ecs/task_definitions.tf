@@ -26,6 +26,12 @@ locals {
       memory      = 1024
       environment = "DYNAMODB_TABLE"
     }
+    migration = {
+      port        = 8004
+      cpu         = 512
+      memory      = 1024
+      environment = "DYNAMODB_TABLE"
+    }
   }
 
   # Map agent names to their version variables
@@ -34,6 +40,7 @@ locals {
     codegen     = var.codegen_image_version
     remediation = var.remediation_image_version
     chatbot     = var.chatbot_image_version
+    migration   = var.migration_image_version
   }
 }
 
@@ -173,6 +180,7 @@ resource "aws_ecs_service" "agents" {
       codegen     = aws_lb_target_group.codegen.arn
       remediation = aws_lb_target_group.remediation.arn
       chatbot     = aws_lb_target_group.chatbot.arn
+      migration   = aws_lb_target_group.migration.arn
     }, each.key)
     container_name = "${each.key}-agent"
     container_port = each.value.port
@@ -200,7 +208,7 @@ resource "aws_ecs_task_definition" "mcp_github" {
 
   container_definitions = jsonencode([{
     name      = "mcp-github"
-    image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/mcp-github:20251205-174916"
+    image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/mcp-github:1.0.7"
     essential = true
 
     portMappings = [{

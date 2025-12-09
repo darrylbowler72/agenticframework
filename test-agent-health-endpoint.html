@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Agent Health Endpoint</title>
+</head>
+<body>
+    <h1>Test Agent Health Endpoint</h1>
+    <button onclick="testEndpoint()">Test Endpoint</button>
+    <pre id="output"></pre>
+
+    <script>
+        async function testEndpoint() {
+            const output = document.getElementById('output');
+            output.textContent = 'Testing...';
+
+            try {
+                // Test the endpoint through API Gateway
+                const response = await fetch('https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/api/agents/health');
+                const data = await response.json();
+
+                output.textContent = `Status: ${response.status}\n\n` + JSON.stringify(data, null, 2);
+            } catch (error) {
+                output.textContent = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

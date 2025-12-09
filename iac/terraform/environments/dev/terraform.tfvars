@@ -13,8 +13,10 @@ availability_zones = [
 
 project_name = "devops-agentic-framework"
 
-# Per-agent container image versions
-planner_image_version     = "20251205-174517"
-codegen_image_version     = "1.0.4"
-remediation_image_version = "20251205-174716"
-chatbot_image_version     = "latest"
+# Per-agent container image versions (semantic versioning)
+planner_image_version     = "1.0.5"
+codegen_image_version     = "1.0.5"
+remediation_image_version = "1.0.5"
+chatbot_image_version     = "1.0.12"
+migration_image_version   = "1.0.5"
+jenkins_image_version     = "1.0.0"
