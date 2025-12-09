@@ -367,7 +367,7 @@ For action_needed=true, extract parameters:
 - remediation: {"pipeline_id": "...", "project_id": "..."}
 - github: {"operation": "create_repo|delete_repo|list_repos|create_branch|create_gitflow", "repo_name": "...", "description": "...", "private": true/false, "max_repos": 30, "branch_name": "...", "from_branch": "main"}
 - jenkins: {"operation": "list_jobs|get_job|test_connection", "job_name": "...", "jenkins_url": "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins", "username": "admin", "password": "admin"}
-- migration: {"jenkinsfile_content": "...", "project_name": "...", "repository_url": "..."}
+- migration: {"job_name": "...", "github_repo": "...", "jenkins_migration": true} for Jenkins job migration OR {"jenkinsfile_content": "...", "project_name": "...", "repository_url": "..."} for generic Jenkinsfile migration
 
 GitHub operation notes:
 - "create_repo": Create a new repository
@@ -383,6 +383,10 @@ Jenkins operation notes:
 1. Set "action_needed": true
 2. Set "intent": "jenkins"
 3. Set "parameters": {"operation": "list_jobs"}
+
+Migration operation notes:
+- For Jenkins job migration (e.g., "migrate jenkins job X to github"), extract: {"job_name": "X", "github_repo": "owner/repo-name", "jenkins_migration": true}
+- The system will automatically fetch the Jenkinsfile from Jenkins and convert it to GitHub Actions
 
 Be friendly, helpful, and conversational. If you need more information, ask the user."""
 
@@ -497,15 +501,39 @@ Analyze the intent and provide your response in JSON format."""
                         return response.json()
 
                 elif intent == "migration":
-                    response = await client.post(
-                        self.agent_endpoints['migration'],
-                        json={
-                            "jenkinsfile_content": parameters.get("jenkinsfile_content", ""),
-                            "project_name": parameters.get("project_name", "project"),
-                            "repository_url": parameters.get("repository_url", "")
-                        }
-                    )
-                    return response.json()
+                    # Check if this is a Jenkins job migration
+                    if parameters.get("job_name") or parameters.get("jenkins_migration"):
+                        # Jenkins-to-GitHub migration
+                        jenkins_url = parameters.get("jenkins_url", "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins")
+                        username = parameters.get("username", "admin")
+                        password = parameters.get("password", "admin")
+
+                        # Get GitHub token from environment or parameters
+                        github_token = parameters.get("github_token", os.getenv("GITHUB_TOKEN", ""))
+
+                        response = await client.post(
+                            f"{self.agent_endpoints['migration']}/jenkins/migrate-job",
+                            json={
+                                "job_name": parameters.get("job_name", ""),
+                                "jenkins_url": jenkins_url,
+                                "username": username,
+                                "password": password,
+                                "github_repo": parameters.get("github_repo", ""),
+                                "github_token": github_token
+                            }
+                        )
+                        return response.json()
+                    else:
+                        # Generic Jenkinsfile migration
+                        response = await client.post(
+                            self.agent_endpoints['migration'],
+                            json={
+                                "jenkinsfile_content": parameters.get("jenkinsfile_content", ""),
+                                "project_name": parameters.get("project_name", "project"),
+                                "repository_url": parameters.get("repository_url", "")
+                            }
+                        )
+                        return response.json()
 
                 elif intent == "github":
                     operation = parameters.get("operation")
