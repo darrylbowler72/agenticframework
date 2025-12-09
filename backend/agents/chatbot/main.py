@@ -347,12 +347,13 @@ You can help users with:
 2. **Generate Code** - Create microservices, infrastructure code, CI/CD pipelines
 3. **Remediate Issues** - Analyze and fix CI/CD pipeline failures
 4. **GitHub Operations** - Create/delete/list repositories, create branches, manage gitflow branching (owner: darrylbowler72)
-5. **Pipeline Migration** - Convert Jenkins pipelines to GitHub Actions workflows
-6. **General Help** - Answer questions about DevOps, the framework, or provide guidance
+5. **Jenkins Operations** - List Jenkins jobs, get job details, test Jenkins connection, create jobs
+6. **Pipeline Migration** - Convert Jenkins pipelines to GitHub Actions workflows
+7. **General Help** - Answer questions about DevOps, the framework, or provide guidance
 
 Analyze the user's message and respond with JSON in this format:
 {
-  "intent": "workflow|codegen|remediation|github|migration|help|general",
+  "intent": "workflow|codegen|remediation|github|jenkins|migration|help|general",
   "action_needed": true/false,
   "parameters": {
     // Extract relevant parameters based on intent
@@ -365,12 +366,18 @@ For action_needed=true, extract parameters:
 - codegen: {"service_name": "...", "language": "...", "database": "...", "api_type": "..."}
 - remediation: {"pipeline_id": "...", "project_id": "..."}
 - github: {"operation": "create_repo|delete_repo|list_repos|create_branch|create_gitflow", "repo_name": "...", "description": "...", "private": true/false, "max_repos": 30, "branch_name": "...", "from_branch": "main"}
+- jenkins: {"operation": "list_jobs|get_job|test_connection", "job_name": "...", "jenkins_url": "http://54.87.173.145:8080", "username": "admin", "password": "admin"}
 - migration: {"jenkinsfile_content": "...", "project_name": "...", "repository_url": "..."}
 
 GitHub operation notes:
 - "create_repo": Create a new repository
 - "create_branch": Create a single branch in an existing repo
 - "create_gitflow": Create standard gitflow branches (develop, feature/*, release/*, hotfix/*)
+
+Jenkins operation notes:
+- "list_jobs": List all Jenkins jobs (also triggered by: "show jenkins jobs", "get jenkins jobs", "list jenkins pipelines")
+- "get_job": Get details about a specific Jenkins job (requires job_name)
+- "test_connection": Test connection to Jenkins server
 
 Be friendly, helpful, and conversational. If you need more information, ask the user."""
 
@@ -445,6 +452,44 @@ Analyze the intent and provide your response in JSON format."""
                         }
                     )
                     return response.json()
+
+                elif intent == "jenkins":
+                    operation = parameters.get("operation")
+                    jenkins_url = parameters.get("jenkins_url", "http://54.87.173.145:8080")
+                    username = parameters.get("username", "admin")
+                    password = parameters.get("password", "admin")
+
+                    if operation == "list_jobs":
+                        response = await client.get(
+                            f"{self.agent_endpoints['migration']}/jenkins/jobs",
+                            params={
+                                "jenkins_url": jenkins_url,
+                                "username": username,
+                                "password": password
+                            }
+                        )
+                        return response.json()
+                    elif operation == "get_job":
+                        job_name = parameters.get("job_name", "")
+                        response = await client.get(
+                            f"{self.agent_endpoints['migration']}/jenkins/jobs/{job_name}",
+                            params={
+                                "jenkins_url": jenkins_url,
+                                "username": username,
+                                "password": password
+                            }
+                        )
+                        return response.json()
+                    elif operation == "test_connection":
+                        response = await client.get(
+                            f"{self.agent_endpoints['migration']}/jenkins/test",
+                            params={
+                                "jenkins_url": jenkins_url,
+                                "username": username,
+                                "password": password
+                            }
+                        )
+                        return response.json()
 
                 elif intent == "migration":
                     response = await client.post(
@@ -589,6 +634,43 @@ Analyze the intent and provide your response in JSON format."""
                                 assistant_message += f"\n- ✅ {branch_result['branch']}"
                             else:
                                 assistant_message += f"\n- ❌ {branch_result['branch']}: {branch_result.get('result', {}).get('error', 'Unknown error')}"
+            elif intent_analysis['intent'] == 'jenkins':
+                if action_result.get('success'):
+                    operation = intent_analysis.get('parameters', {}).get('operation')
+                    if operation == 'list_jobs':
+                        jobs = action_result.get('jobs', [])
+                        count = action_result.get('jobs_count', 0)
+                        jenkins_url = action_result.get('jenkins_url', 'N/A')
+                        assistant_message += f"\n\n✅ Found {count} Jenkins jobs on {jenkins_url}:"
+                        for job in jobs[:15]:  # Show first 15
+                            color = job.get('color', 'notbuilt')
+                            status_icon = "🟢" if color in ['blue', 'success'] else "🔴" if color in ['red', 'failed'] else "🟡" if color in ['yellow', 'unstable'] else "⚪"
+                            assistant_message += f"\n{status_icon} {job.get('name')}"
+                        if count > 15:
+                            assistant_message += f"\n... and {count - 15} more jobs"
+                    elif operation == 'get_job':
+                        job_name = action_result.get('name', 'N/A')
+                        description = action_result.get('description', 'No description')
+                        url = action_result.get('url', 'N/A')
+                        buildable = action_result.get('buildable', False)
+                        last_build = action_result.get('last_build', {})
+                        assistant_message += f"\n\n✅ Jenkins Job Details:"
+                        assistant_message += f"\n- Name: {job_name}"
+                        assistant_message += f"\n- Description: {description}"
+                        assistant_message += f"\n- URL: {url}"
+                        assistant_message += f"\n- Buildable: {buildable}"
+                        if last_build:
+                            assistant_message += f"\n- Last Build: #{last_build.get('number')} - {last_build.get('result', 'N/A')}"
+                        if action_result.get('pipeline_script'):
+                            assistant_message += f"\n- Has Pipeline Script: Yes"
+                    elif operation == 'test_connection':
+                        jenkins_url = action_result.get('url', 'N/A')
+                        version = action_result.get('version', 'N/A')
+                        jobs_count = action_result.get('jobs_count', 0)
+                        assistant_message += f"\n\n✅ Jenkins connection successful!"
+                        assistant_message += f"\n- URL: {jenkins_url}"
+                        assistant_message += f"\n- Version: {version}"
+                        assistant_message += f"\n- Total Jobs: {jobs_count}"
 
         # Add assistant message
         messages.append({
