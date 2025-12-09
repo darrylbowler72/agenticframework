@@ -74,13 +74,13 @@ class ChatbotAgent(BaseAgent):
         self.environment = os.getenv('ENVIRONMENT', 'dev')
         self.sessions_table = self.dynamodb.Table(f'{self.environment}-chatbot-sessions')
 
-        # Internal API endpoints for agents - use environment variable or fallback to hardcoded
-        alb_base_url = os.getenv('INTERNAL_ALB_URL', 'http://internal-dev-agents-alb-1798962120.us-east-1.elb.amazonaws.com')
+        # API Gateway endpoints for agents
+        api_gateway_url = os.getenv('API_GATEWAY_URL', 'https://6zv33f750f.execute-api.us-east-1.amazonaws.com/dev')
         self.agent_endpoints = {
-            'planner': f'{alb_base_url}/workflows',
-            'codegen': f'{alb_base_url}/generate',
-            'remediation': f'{alb_base_url}/remediate',
-            'migration': f'{alb_base_url}/migrate'
+            'planner': f'{api_gateway_url}/workflows',
+            'codegen': f'{api_gateway_url}/generate',
+            'remediation': f'{api_gateway_url}/remediate',
+            'migration': f'{api_gateway_url}/migration'
         }
 
     async def process_task(self, task_data: Dict) -> Dict:
