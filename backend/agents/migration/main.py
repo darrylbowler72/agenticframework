@@ -237,16 +237,24 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
                     run_command = step['run']
                     step_name = step.get('name', 'unnamed')
 
+                    # Convert run_command to string if it's not already
+                    if not isinstance(run_command, str):
+                        run_command = str(run_command)
+
+                    # Normalize to lowercase for case-insensitive matching
+                    run_command_lower = run_command.lower()
+
                     # For Linux/Mac runners, skip Windows commands
                     if runner in ['ubuntu-latest', 'macos-latest']:
-                        if any(cmd in run_command for cmd in ['mvnw.cmd', 'gradlew.bat', '.bat', '.cmd', 'powershell']):
+                        windows_patterns = ['mvnw.cmd', 'gradlew.bat', '.bat', '.cmd', 'powershell', '.exe']
+                        if any(pattern.lower() in run_command_lower for pattern in windows_patterns):
                             self.logger.info(f"REMOVING Windows step '{step_name}' from Linux workflow: {run_command[:100]}")
                             total_removed += 1
                             continue  # Skip this step
 
                     # For Windows runners, skip Unix commands
                     elif runner == 'windows-latest':
-                        if run_command.startswith('./') and not any(ext in run_command for ext in ['.cmd', '.bat']):
+                        if run_command.startswith('./') and not any(ext in run_command_lower for ext in ['.cmd', '.bat', '.exe']):
                             self.logger.info(f"REMOVING Unix step '{step_name}' from Windows workflow: {run_command[:100]}")
                             total_removed += 1
                             continue  # Skip this step
