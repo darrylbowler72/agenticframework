@@ -204,39 +204,49 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
 
     def _clean_platform_commands(self, workflow_yaml: str, runner: str) -> str:
         """
-        Remove platform-mismatched commands from the workflow.
+        Remove platform-mismatched commands from the workflow using YAML parsing.
         For Linux/Mac runners, remove Windows commands. For Windows runners, remove Unix commands.
         """
-        lines = workflow_yaml.split('\n')
-        cleaned_lines = []
-        skip_step = False
+        try:
+            import yaml
+            workflow_dict = yaml.safe_load(workflow_yaml)
 
-        for i, line in enumerate(lines):
-            # Check if this is a step with a run command
-            if '- name:' in line and i + 1 < len(lines) and 'run:' in lines[i + 1]:
-                next_line = lines[i + 1]
-                run_command = next_line.split('run:', 1)[1].strip() if 'run:' in next_line else ""
+            if not workflow_dict or 'jobs' not in workflow_dict:
+                return workflow_yaml
 
-                # For Linux/Mac runners, skip Windows commands
-                if runner in ['ubuntu-latest', 'macos-latest']:
-                    if any(cmd in run_command for cmd in ['mvnw.cmd', 'gradlew.bat', '.bat', '.cmd', 'powershell']):
-                        skip_step = True
-                        continue
-                # For Windows runners, skip Unix commands
-                elif runner == 'windows-latest':
-                    if run_command.startswith('./') and not any(ext in run_command for ext in ['.cmd', '.bat']):
-                        skip_step = True
+            # Process each job
+            for job_name, job_config in workflow_dict['jobs'].items():
+                if 'steps' not in job_config:
+                    continue
+
+                # Filter out platform-mismatched steps
+                cleaned_steps = []
+                for step in job_config['steps']:
+                    if 'run' not in step:
+                        cleaned_steps.append(step)
                         continue
 
-            # Skip the run line if we're skipping the step
-            if skip_step and 'run:' in line:
-                skip_step = False
-                continue
+                    run_command = step['run']
 
-            if not skip_step:
-                cleaned_lines.append(line)
+                    # For Linux/Mac runners, skip Windows commands
+                    if runner in ['ubuntu-latest', 'macos-latest']:
+                        if any(cmd in run_command for cmd in ['mvnw.cmd', 'gradlew.bat', '.bat', '.cmd', 'powershell']):
+                            continue  # Skip this step
 
-        return '\n'.join(cleaned_lines)
+                    # For Windows runners, skip Unix commands
+                    elif runner == 'windows-latest':
+                        if run_command.startswith('./') and not any(ext in run_command for ext in ['.cmd', '.bat']):
+                            continue  # Skip this step
+
+                    cleaned_steps.append(step)
+
+                job_config['steps'] = cleaned_steps
+
+            # Convert back to YAML
+            return yaml.dump(workflow_dict, default_flow_style=False, sort_keys=False)
+        except Exception as e:
+            self.logger.error(f"Platform command cleaning failed: {str(e)}, returning original workflow")
+            return workflow_yaml
 
     def parse_jenkinsfile(self, jenkinsfile: str) -> Dict[str, Any]:
         """
