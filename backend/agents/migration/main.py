@@ -192,10 +192,13 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
                 workflow_yaml = workflow_yaml.split('```')[1].split('```')[0].strip()
 
             # Post-process: Remove platform-mismatched commands
-            workflow_yaml = self._clean_platform_commands(workflow_yaml, pipeline_data.get('agent', 'ubuntu-latest'))
+            runner = pipeline_data.get('agent', 'ubuntu-latest')
+            self.logger.info(f"PRE-CLEANUP: Workflow for runner '{runner}':\n{workflow_yaml[:500]}...")
+            cleaned_workflow = self._clean_platform_commands(workflow_yaml, runner)
+            self.logger.info(f"POST-CLEANUP: Cleaned workflow:\n{cleaned_workflow[:500]}...")
 
             self.logger.info("LLM successfully generated GitHub Actions workflow")
-            return workflow_yaml
+            return cleaned_workflow
 
         except Exception as e:
             self.logger.error(f"LLM workflow generation failed: {str(e)}, falling back to template-based generation")
@@ -209,15 +212,20 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
         """
         try:
             import yaml
+            self.logger.info(f"Starting cleanup for runner: {runner}")
             workflow_dict = yaml.safe_load(workflow_yaml)
 
             if not workflow_dict or 'jobs' not in workflow_dict:
+                self.logger.warning("No jobs found in workflow, returning original")
                 return workflow_yaml
 
             # Process each job
+            total_removed = 0
             for job_name, job_config in workflow_dict['jobs'].items():
                 if 'steps' not in job_config:
                     continue
+
+                original_step_count = len(job_config['steps'])
 
                 # Filter out platform-mismatched steps
                 cleaned_steps = []
@@ -227,25 +235,35 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
                         continue
 
                     run_command = step['run']
+                    step_name = step.get('name', 'unnamed')
 
                     # For Linux/Mac runners, skip Windows commands
                     if runner in ['ubuntu-latest', 'macos-latest']:
                         if any(cmd in run_command for cmd in ['mvnw.cmd', 'gradlew.bat', '.bat', '.cmd', 'powershell']):
+                            self.logger.info(f"REMOVING Windows step '{step_name}' from Linux workflow: {run_command[:100]}")
+                            total_removed += 1
                             continue  # Skip this step
 
                     # For Windows runners, skip Unix commands
                     elif runner == 'windows-latest':
                         if run_command.startswith('./') and not any(ext in run_command for ext in ['.cmd', '.bat']):
+                            self.logger.info(f"REMOVING Unix step '{step_name}' from Windows workflow: {run_command[:100]}")
+                            total_removed += 1
                             continue  # Skip this step
 
                     cleaned_steps.append(step)
 
+                self.logger.info(f"Job '{job_name}': {original_step_count} steps -> {len(cleaned_steps)} steps (removed {original_step_count - len(cleaned_steps)})")
                 job_config['steps'] = cleaned_steps
+
+            self.logger.info(f"Cleanup complete: Removed {total_removed} platform-mismatched steps total")
 
             # Convert back to YAML
             return yaml.dump(workflow_dict, default_flow_style=False, sort_keys=False)
         except Exception as e:
             self.logger.error(f"Platform command cleaning failed: {str(e)}, returning original workflow")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return workflow_yaml
 
     def parse_jenkinsfile(self, jenkinsfile: str) -> Dict[str, Any]:
