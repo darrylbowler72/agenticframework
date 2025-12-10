@@ -507,6 +507,240 @@ Jenkins Pipeline → LLM Analysis → Structured Data → LLM Generation → Git
 - v1.0.23: YAML-based cleanup with structured parsing
 - v1.0.22: Initial LLM-powered migration with template fallback
 
+**How the Migration Agent Converts Jenkins Pipelines to GitHub Actions**:
+
+The Migration Agent uses a sophisticated AI-powered approach to convert Jenkins pipelines into idiomatic GitHub Actions workflows:
+
+**Phase 1: Intelligent Parsing**
+```
+Jenkinsfile → LLM Analysis → Structured Pipeline Data
+```
+
+1. **LLM-Powered Parsing** (`parse_jenkinsfile_with_llm`):
+   - Sends the Jenkinsfile to Claude API with detailed extraction instructions
+   - Claude analyzes both declarative and scripted pipelines
+   - Extracts: stages, steps, environment variables, triggers, tools, post-actions
+   - Returns structured JSON representation of the pipeline
+   - Falls back to regex-based parsing if LLM parsing fails
+
+2. **Structured Data Extraction**:
+   ```json
+   {
+     "type": "declarative",
+     "agent": "ubuntu-latest",
+     "stages": [
+       {
+         "name": "Build",
+         "steps": ["./mvnw clean compile"]
+       }
+     ],
+     "environment": {"JAVA_HOME": "/usr/lib/jvm/java-17"},
+     "triggers": [{"type": "cron", "value": "H */4 * * 1-5"}],
+     "tools": ["java", "maven"]
+   }
+   ```
+
+**Phase 2: Intelligent Generation**
+```
+Structured Data → LLM Generation → GitHub Actions YAML
+```
+
+1. **LLM-Powered Generation** (`generate_workflow_with_llm`):
+   - Sends structured pipeline data to Claude API
+   - Instructs Claude to generate idiomatic GitHub Actions workflow
+   - Claude intelligently:
+     - Converts Jenkins stages to GitHub Actions jobs
+     - Maps Jenkins steps to appropriate GitHub Actions
+     - Selects optimal GitHub Actions from marketplace
+     - Configures proper job dependencies
+     - Adds best practices (caching, artifacts, etc.)
+
+2. **Smart Conversion Examples**:
+
+   **Jenkins Stage → GitHub Actions Job**:
+   ```groovy
+   // Jenkins
+   stage('Build') {
+     steps {
+       sh './mvnw clean compile'
+     }
+   }
+   ```
+   ```yaml
+   # GitHub Actions
+   build:
+     runs-on: ubuntu-latest
+     steps:
+       - uses: actions/checkout@v4
+       - uses: actions/setup-java@v4
+         with:
+           java-version: '17'
+           distribution: 'temurin'
+           cache: 'maven'
+       - name: Build
+         run: ./mvnw clean compile
+   ```
+
+   **Jenkins Agent → GitHub Actions Runner**:
+   ```groovy
+   agent { label 'linux' }  →  runs-on: ubuntu-latest
+   agent { label 'windows' } →  runs-on: windows-latest
+   agent any                →  runs-on: ubuntu-latest (default)
+   ```
+
+   **Jenkins Tools → GitHub Actions Setup Actions**:
+   ```groovy
+   tools {
+     jdk 'Java 17'
+     maven 'Maven 3.9'
+   }
+   ```
+   ```yaml
+   - uses: actions/setup-java@v4
+     with:
+       java-version: '17'
+       distribution: 'temurin'
+       cache: 'maven'
+   ```
+
+**Phase 3: Platform Cleanup**
+```
+Generated Workflow → Platform Cleanup → Final Workflow
+```
+
+1. **Platform Command Cleanup** (`_clean_platform_commands`):
+   - Parses generated YAML workflow
+   - Identifies platform-specific commands
+   - Removes incompatible commands based on runner type
+
+2. **Cleanup Logic**:
+   ```python
+   # For Linux/Mac runners (ubuntu-latest, macos-latest)
+   Remove: mvnw.cmd, gradlew.bat, .bat, .cmd, .exe, powershell
+   Keep:   ./mvnw, ./gradlew, chmod, bash, sh
+
+   # For Windows runners (windows-latest)
+   Remove: ./mvnw, ./gradlew (unless .cmd/.bat/.exe)
+   Keep:   mvnw.cmd, gradlew.bat, .bat, .cmd, .exe, powershell
+   ```
+
+3. **Example Cleanup**:
+   ```yaml
+   # Before Cleanup (Windows commands on Linux runner)
+   - name: Build
+     run: mvnw.cmd clean compile  # ❌ Will fail on ubuntu-latest
+   - name: Build
+     run: ./mvnw clean compile    # ✅ Works on ubuntu-latest
+
+   # After Cleanup
+   - name: Build
+     run: ./mvnw clean compile    # ✅ Only compatible command remains
+   ```
+
+**Phase 4: Enhanced Features**
+
+1. **Automatic Optimizations**:
+   - Adds dependency caching (Maven, Gradle, npm)
+   - Configures artifact uploads for build outputs
+   - Sets up proper checkout with correct repository/branch
+   - Adds job concurrency controls
+   - Configures timeout values
+
+2. **Trigger Conversion**:
+   ```groovy
+   // Jenkins
+   triggers {
+     cron('H */4 * * 1-5')      →  schedule: '0 */4 * * 1-5'
+     pollSCM('H/15 * * * *')    →  push: branches: [main]
+   }
+   ```
+
+3. **Post Actions → Job Status**:
+   ```groovy
+   // Jenkins
+   post {
+     success { echo 'Success!' }
+     failure { echo 'Failed!' }
+   }
+   ```
+   ```yaml
+   # GitHub Actions
+   - name: Success message
+     if: success()
+     run: echo 'Success!'
+   - name: Failure message
+     if: failure()
+     run: echo 'Failed!'
+   ```
+
+**Complete Example Flow**:
+
+```
+Input Jenkinsfile:
+─────────────────
+pipeline {
+  agent any
+  tools { jdk 'Java 17' }
+  stages {
+    stage('Build') {
+      steps {
+        sh './mvnw clean compile'
+        sh 'mvnw.cmd clean compile'  // Windows command
+      }
+    }
+  }
+}
+
+↓ LLM Parsing ↓
+
+Structured Data:
+────────────────
+{
+  "agent": "ubuntu-latest",
+  "tools": ["java"],
+  "stages": [
+    {"name": "Build", "steps": ["./mvnw clean compile", "mvnw.cmd clean compile"]}
+  ]
+}
+
+↓ LLM Generation ↓
+
+Generated Workflow:
+───────────────────
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+      - run: ./mvnw clean compile
+      - run: mvnw.cmd clean compile  # Windows command
+
+↓ Platform Cleanup ↓
+
+Final Workflow:
+───────────────
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+      - run: ./mvnw clean compile     # ✅ Windows command removed
+```
+
+**Why This Approach Works**:
+
+1. **Intelligence Over Templates**: LLM understands context and intent, not just syntax
+2. **Idiomatic Output**: Generates GitHub Actions workflows that follow best practices
+3. **Handles Complexity**: Can parse complex scripted pipelines with conditional logic
+4. **Platform Awareness**: Automatically removes incompatible platform commands
+5. **Optimization**: Adds caching, artifacts, and other GitHub Actions features automatically
+
 #### 8. Observability Agent (Planned)
 **Purpose**: Analyzes telemetry data and provides intelligent insights into system health.
 
