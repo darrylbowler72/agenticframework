@@ -85,6 +85,113 @@ class MigrationAgent(BaseAgent):
 
         return await self.migrate_pipeline(jenkinsfile, project_name)
 
+    async def parse_jenkinsfile_with_llm(self, jenkinsfile: str) -> Dict[str, Any]:
+        """
+        Use LLM to parse Jenkinsfile intelligently.
+        This provides more accurate parsing than regex for complex pipelines.
+        """
+        prompt = f"""You are a Jenkins pipeline expert. Analyze the following Jenkinsfile and extract its structure as JSON.
+
+Jenkinsfile:
+```
+{jenkinsfile}
+```
+
+Extract and return ONLY a valid JSON object with this structure:
+{{
+    "type": "declarative or scripted",
+    "agent": "ubuntu-latest, windows-latest, or macos-latest",
+    "stages": [
+        {{
+            "name": "stage name",
+            "steps": ["list of commands or actions in this stage"]
+        }}
+    ],
+    "environment": {{"ENV_VAR": "value"}},
+    "git_url": "repository URL if present",
+    "git_branch": "branch name if present",
+    "triggers": [{{"type": "cron or pollSCM", "value": "cron expression if applicable"}}],
+    "tools": ["java", "maven", "node", etc],
+    "post_actions": {{"success": ["actions"], "failure": ["actions"]}}
+}}
+
+Be thorough - extract ALL stages, steps, commands, and configuration details."""
+
+        try:
+            response = await self.call_claude(
+                prompt=prompt,
+                max_tokens=4000
+            )
+
+            # Extract JSON from response
+            content = response['content'][0]['text']
+
+            # Try to find JSON in the response
+            import json
+            if '```json' in content:
+                json_str = content.split('```json')[1].split('```')[0].strip()
+            elif '```' in content:
+                json_str = content.split('```')[1].split('```')[0].strip()
+            else:
+                json_str = content.strip()
+
+            pipeline_data = json.loads(json_str)
+            self.log_info(f"LLM successfully parsed pipeline with {len(pipeline_data.get('stages', []))} stages")
+            return pipeline_data
+
+        except Exception as e:
+            self.log_error(f"LLM parsing failed: {str(e)}, falling back to regex parser")
+            return self.parse_jenkinsfile(jenkinsfile)
+
+    async def generate_workflow_with_llm(self, pipeline_data: Dict, project_name: str) -> str:
+        """
+        Use LLM to generate optimized GitHub Actions workflow.
+        This creates more idiomatic and efficient workflows than template-based generation.
+        """
+        prompt = f"""You are a GitHub Actions expert. Convert the following Jenkins pipeline data into an optimized GitHub Actions workflow YAML.
+
+Pipeline Data:
+```json
+{json.dumps(pipeline_data, indent=2)}
+```
+
+Project Name: {project_name}
+
+Create a GitHub Actions workflow that:
+1. Uses the correct runner (ubuntu-latest, windows-latest, or macos-latest)
+2. Sets up necessary tools (Java, Maven, Node, etc.)
+3. Includes proper checkout action for the repository
+4. Converts all stages to jobs with dependencies
+5. Uses appropriate GitHub Actions for each step
+6. Includes environment variables
+7. Sets up triggers (push, cron, etc.)
+8. Adds artifact uploads where appropriate
+9. Follows GitHub Actions best practices
+
+Return ONLY the complete workflow YAML, starting with 'name:'. Do not include markdown code fences or explanations."""
+
+        try:
+            response = await self.call_claude(
+                prompt=prompt,
+                max_tokens=4000
+            )
+
+            workflow_yaml = response['content'][0]['text'].strip()
+
+            # Remove markdown code fences if present
+            if '```yaml' in workflow_yaml:
+                workflow_yaml = workflow_yaml.split('```yaml')[1].split('```')[0].strip()
+            elif '```' in workflow_yaml:
+                workflow_yaml = workflow_yaml.split('```')[1].split('```')[0].strip()
+
+            self.log_info("LLM successfully generated GitHub Actions workflow")
+            return workflow_yaml
+
+        except Exception as e:
+            self.log_error(f"LLM workflow generation failed: {str(e)}, falling back to template-based generation")
+            workflow_dict = self.convert_to_github_actions(pipeline_data, project_name)
+            return yaml.dump(workflow_dict, default_flow_style=False, sort_keys=False)
+
     def parse_jenkinsfile(self, jenkinsfile: str) -> Dict[str, Any]:
         """
         Parse Jenkinsfile and extract pipeline structure.
@@ -458,25 +565,33 @@ class MigrationAgent(BaseAgent):
 
         return step
 
-    async def migrate_pipeline(self, jenkinsfile: str, project_name: str) -> Dict:
-        """Main migration method."""
+    async def migrate_pipeline(self, jenkinsfile: str, project_name: str, use_llm: bool = True) -> Dict:
+        """Main migration method with LLM capabilities."""
         try:
             warnings = []
 
-            # Parse Jenkinsfile
-            pipeline_data = self.parse_jenkinsfile(jenkinsfile)
+            # Parse Jenkinsfile with LLM (falls back to regex if LLM fails)
+            if use_llm:
+                self.log_info("Using LLM-powered parser for intelligent Jenkinsfile analysis")
+                pipeline_data = await self.parse_jenkinsfile_with_llm(jenkinsfile)
+            else:
+                self.log_info("Using regex-based parser")
+                pipeline_data = self.parse_jenkinsfile(jenkinsfile)
 
-            if pipeline_data['type'] == 'unknown':
+            if pipeline_data.get('type') == 'unknown':
                 return {
                     'success': False,
                     'error': 'Unable to parse Jenkinsfile. Supported formats: Declarative and Scripted pipelines'
                 }
 
-            # Convert to GitHub Actions
-            workflow = self.convert_to_github_actions(pipeline_data, project_name)
-
-            # Generate YAML
-            workflow_yaml = yaml.dump(workflow, default_flow_style=False, sort_keys=False)
+            # Generate GitHub Actions workflow with LLM (falls back to template-based if LLM fails)
+            if use_llm:
+                self.log_info("Using LLM-powered generator for optimized GitHub Actions workflow")
+                workflow_yaml = await self.generate_workflow_with_llm(pipeline_data, project_name)
+            else:
+                self.log_info("Using template-based workflow generator")
+                workflow = self.convert_to_github_actions(pipeline_data, project_name)
+                workflow_yaml = yaml.dump(workflow, default_flow_style=False, sort_keys=False)
 
             # Generate migration report
             report = {
