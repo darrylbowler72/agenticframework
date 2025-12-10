@@ -291,11 +291,12 @@ class MigrationAgent(BaseAgent):
 
         # Add checkout step - use custom repo URL if specified
         if 'git_url' in pipeline_data and pipeline_data['git_url']:
+            repo_url = pipeline_data['git_url'].replace('https://github.com/', '').removesuffix('.git')
             job['steps'].append({
                 'name': 'Checkout repository',
                 'uses': 'actions/checkout@v4',
                 'with': {
-                    'repository': pipeline_data['git_url'].replace('https://github.com/', ''),
+                    'repository': repo_url,
                     'ref': pipeline_data.get('git_branch', 'main')
                 }
             })
@@ -354,11 +355,12 @@ class MigrationAgent(BaseAgent):
         # Add checkout step - use custom repo URL if specified
         if 'git_url' in pipeline_data and pipeline_data['git_url']:
             # Checkout from specified repository
+            repo_url = pipeline_data['git_url'].replace('https://github.com/', '').removesuffix('.git')
             job['steps'].append({
                 'name': 'Checkout repository',
                 'uses': 'actions/checkout@v4',
                 'with': {
-                    'repository': pipeline_data['git_url'].replace('https://github.com/', ''),
+                    'repository': repo_url,
                     'ref': pipeline_data.get('git_branch', 'main')
                 }
             })
