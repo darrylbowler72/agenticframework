@@ -22,12 +22,13 @@ The framework is deployed and accessible via public API Gateway with a conversat
 - POST /chat - Chat with AI assistant
 - GET /*/health - Health checks
 
-**AI Agents Running** (5 services on AWS ECS Fargate):
+**AI Agents Running** (6 services on AWS ECS Fargate):
 1. **Planner Agent** (port 8000) - Orchestrates multi-step workflows
 2. **CodeGen Agent** (port 8001) - Generates code and infrastructure
 3. **Remediation Agent** (port 8002) - Auto-fixes detected issues
 4. **Chatbot Agent** (port 8003) - Conversational DevOps interface
-5. **MCP GitHub Server** (port 8100) - Model Context Protocol server for GitHub operations
+5. **Migration Agent** (port 8004) - Converts Jenkins pipelines to GitHub Actions
+6. **MCP GitHub Server** (port 8100) - Model Context Protocol server for GitHub operations
 
 **Infrastructure** (90+ AWS resources deployed):
 - Application Load Balancer routing to ECS services
@@ -78,6 +79,17 @@ curl -X POST https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/generate
   }'
 ```
 
+#### Migrate Jenkins Pipeline
+```bash
+curl -X POST https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/migration/migrate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jenkinsfile_content": "pipeline { agent any stages { stage(Build) { steps { sh maven clean install } } } }",
+    "project_name": "my-service",
+    "options": {}
+  }'
+```
+
 #### Check Health
 ```bash
 curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/planner/health
@@ -87,6 +99,7 @@ curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/planner/health
 
 - **AI Scaffolding**: Generates repos, microservices, IaC, CI/CD pipelines automatically
 - **Multi-Agent System**: Specialized agents powered by Claude AI work together
+- **Pipeline Migration**: Converts Jenkins pipelines to GitHub Actions workflows automatically
 - **Conversational Interface**: Natural language chatbot for DevOps operations
 - **MCP Integration**: Model Context Protocol for standardized tool integration
 - **Event-Driven**: EventBridge-based asynchronous task orchestration
@@ -161,6 +174,7 @@ The MCP GitHub Server runs as an ECS Fargate service alongside the agents, acces
   /codegen              # Code generation
   /remediation          # Auto-remediation
   /chatbot              # Conversational interface
+  /migration            # Jenkins to GitHub Actions migration
   /common               # Shared utilities
 /iac                    # Infrastructure as Code
   /terraform            # AWS infrastructure
@@ -175,7 +189,7 @@ The MCP GitHub Server runs as an ECS Fargate service alongside the agents, acces
 ### High-Level Flow
 
 ```
-User → Chatbot/API Gateway → VPC Link → ALB → ECS Agents
+User → Chatbot/API Gateway → VPC Link → ALB → ECS Agents (6 services)
                                               ↓
                                     EventBridge + DynamoDB + S3
 ```
@@ -183,7 +197,7 @@ User → Chatbot/API Gateway → VPC Link → ALB → ECS Agents
 ### Components
 
 **Compute**:
-- ECS Fargate cluster with 4 agent services
+- ECS Fargate cluster with 5 agent services + 1 MCP server
 - Auto-scaling based on CPU/memory
 
 **Storage**:

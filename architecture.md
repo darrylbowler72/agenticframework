@@ -55,13 +55,22 @@
   - Status: ✅ Active (1/1 running)
   - **Public Interface**: Accessible via API Gateway at root path (`/`)
 
+- **Migration Agent** - `dev-migration-agent` service
+  - Container: `773550624765.dkr.ecr.us-east-1.amazonaws.com/migration-agent:latest`
+  - Port: 8004
+  - Resources: 512 CPU / 1024 MB Memory
+  - Health Check: HTTP `/health` endpoint
+  - Status: ✅ Active (1/1 running)
+  - **Version**: 1.0.26
+  - **Purpose**: Jenkins to GitHub Actions pipeline migration
+
 #### AWS Infrastructure (Deployed)
 - **VPC**: Custom VPC with public/private subnets across 2 AZs
 - **API Gateway**: HTTP API for agent orchestration (publicly accessible)
   - Base URL: `https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev`
-  - Routes: POST /workflows, POST /generate, POST /remediate, POST /chat, GET /*, GET /static/*
+  - Routes: POST /workflows, POST /generate, POST /remediate, POST /chat, POST /migration/*, GET /*, GET /static/*
 - **Application Load Balancer**: Internal ALB routing to ECS services
-  - 4 target groups (planner, codegen, remediation, chatbot)
+  - 5 target groups (planner, codegen, remediation, chatbot, migration)
   - Health checks configured for all services
 - **VPC Link**: Connects API Gateway (public) to ALB (private VPC)
 - **EventBridge**: Custom event bus for agent communication
@@ -69,8 +78,8 @@
 - **S3**: 4 buckets (artifacts, templates, policy-bundles, terraform-state)
 - **Secrets Manager**: 3 secrets (Anthropic API key, GitLab credentials, Slack credentials)
 - **CloudWatch**: Log groups for agents and API Gateway
-- **ECS Cluster**: Fargate cluster `dev-agentic-cluster` with 4 services
-- **ECR**: 4 container repositories for agent images
+- **ECS Cluster**: Fargate cluster `dev-agentic-cluster` with 5 services
+- **ECR**: 5 container repositories for agent images
 - **IAM**: Task execution and task roles with appropriate permissions
 - **Security Groups**: ECS tasks, ALB, and VPC Link security groups
 
@@ -115,33 +124,33 @@
 ┌──────────────────────────────────────────────────────────────┐
 │           AWS API Gateway (HTTP API) - Public                │
 │   https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com    │
-│   - POST /workflows  - POST /generate  - POST /remediate    │
-│   - POST /chat       - GET /*          - GET /static/*      │
+│   - POST /workflows  - POST /generate   - POST /remediate   │
+│   - POST /chat       - POST /migration  - GET /*            │
 └────────────────────────┬─────────────────────────────────────┘
                          │ VPC Link
                          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │        Application Load Balancer (Internal/Private)          │
-│        - 4 Target Groups with health checks                  │
-└────────────┬────────────┬────────────┬────────────┬──────────┘
-             │            │            │            │
-             ▼            ▼            ▼            ▼
-        ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐
-        │Planner │  │CodeGen │  │Remediat│  │Chatbot │
-        │Agent   │  │Agent   │  │Agent   │  │Agent   │
-        │(ECS)   │  │(ECS)   │  │(ECS)   │  │(ECS)   │
-        │:8000   │  │:8001   │  │:8002   │  │:8003   │
-        └────┬───┘  └────┬───┘  └────┬───┘  └────┬───┘
-             │           │           │           │
-             └───────────┼───────────┼───────────┘
-                         │           │
-         ┌───────────────┼───────────┼───────────────┐
-         │               │           │               │
-         ▼               ▼           ▼               ▼
-    ┌─────────┐     ┌─────────┐  ┌────────┐   ┌─────────┐
-    │DynamoDB │     │   S3    │  │EventBus│   │Secrets  │
-    │4 Tables │     │4 Buckets│  │        │   │Manager  │
-    └─────────┘     └─────────┘  └────────┘   └─────────┘
+│        - 5 Target Groups with health checks                  │
+└────┬─────────┬─────────┬─────────┬─────────┬────────────────┘
+     │         │         │         │         │
+     ▼         ▼         ▼         ▼         ▼
+┌────────┐┌────────┐┌────────┐┌────────┐┌─────────┐
+│Planner ││CodeGen ││Remediat││Chatbot ││Migration│
+│Agent   ││Agent   ││Agent   ││Agent   ││Agent    │
+│(ECS)   ││(ECS)   ││(ECS)   ││(ECS)   ││(ECS)    │
+│:8000   ││:8001   ││:8002   ││:8003   ││:8004    │
+└────┬───┘└────┬───┘└────┬───┘└────┬───┘└────┬────┘
+     │         │         │         │         │
+     └─────────┼─────────┼─────────┼─────────┘
+               │         │         │
+   ┌───────────┼─────────┼─────────┼───────────────┐
+   │           │         │         │               │
+   ▼           ▼         ▼         ▼               ▼
+┌─────────┐┌─────────┐┌────────┐┌─────────┐┌──────────┐
+│DynamoDB ││   S3    ││EventBus││Secrets  ││Jenkins   │
+│4 Tables ││4 Buckets││        ││Manager  ││API       │
+└─────────┘└─────────┘└────────┘└─────────┘└──────────┘
 ```
 
 ### Deployment Commands
@@ -438,7 +447,67 @@ Output:
 - "Generate a REST API with authentication"
 - "What DevOps best practices should I follow?"
 
-#### 7. Observability Agent (Planned)
+#### 7. Migration Agent (✅ Deployed)
+**Purpose**: Converts Jenkins pipelines to GitHub Actions workflows automatically using AI-powered analysis.
+
+**Responsibilities**:
+- Parse Jenkins declarative and scripted pipelines
+- Convert Jenkins stages and steps to GitHub Actions jobs
+- Map Jenkins plugins to equivalent GitHub Actions
+- Generate idiomatic GitHub Actions workflows
+- Integrate with Jenkins servers for direct job migration
+- Create GitHub repositories and push workflows
+- Clean platform-specific commands (remove Windows commands from Linux workflows)
+
+**Technology Stack**:
+- Runtime: ECS Fargate (persistent service)
+- AI Model: Claude API for intelligent pipeline analysis and conversion
+- Languages: Python 3.11 with FastAPI
+- Storage: Generates workflows and stores migration reports
+- Integration: Jenkins REST API, GitHub REST API
+
+**Key Features**:
+- **LLM-Powered Parsing**: Uses Claude to intelligently parse complex Jenkinsfiles
+- **Smart Conversion**: Generates optimized GitHub Actions workflows, not just direct translations
+- **Jenkins Integration**: Connect to Jenkins servers to list, analyze, and migrate jobs
+- **GitHub Integration**: Create repositories and commit workflows directly
+- **Platform Cleanup**: Automatically removes platform-incompatible commands
+- **Migration Reports**: Detailed reports of converted stages, environment variables, and triggers
+
+**API Endpoints**:
+- POST /migration/migrate - Convert Jenkinsfile to GitHub Actions
+- POST /migration/analyze - Analyze Jenkins pipeline structure
+- POST /migration/jenkins/test-connection - Test Jenkins server connection
+- GET /migration/jenkins/list-jobs - List all Jenkins jobs
+- POST /migration/jenkins/migrate-job - Migrate specific Jenkins job
+- POST /migration/jenkins/create-job - Create new Jenkins job
+- POST /migration/github/test-connection - Test GitHub connection
+- POST /migration/test-integration - End-to-end integration test
+
+**Example Migration Flow**:
+```
+Jenkins Pipeline → LLM Analysis → Structured Data → LLM Generation → GitHub Actions Workflow
+     ↓                                                                        ↓
+  Optional: Direct Jenkins integration                    Optional: Create GitHub repo + commit
+```
+
+**Conversion Capabilities**:
+- **Stages**: Jenkins stages → GitHub Actions jobs
+- **Steps**: Shell commands, Maven, Gradle, Docker, etc.
+- **Environment**: Environment variables mapping
+- **Agents**: Jenkins agents → GitHub Actions runners (ubuntu-latest, windows-latest, etc.)
+- **Triggers**: cron, pollSCM → GitHub Actions triggers
+- **Tools**: Java, Maven, Node.js → GitHub Actions setup actions
+- **Post Actions**: success/failure actions → job status conditionals
+
+**Version History**:
+- v1.0.26 (Current): Fixed platform command cleanup integration
+- v1.0.25: Added robust string handling for command cleanup
+- v1.0.24: Enhanced logging for debugging
+- v1.0.23: YAML-based cleanup with structured parsing
+- v1.0.22: Initial LLM-powered migration with template fallback
+
+#### 8. Observability Agent (Planned)
 **Purpose**: Analyzes telemetry data and provides intelligent insights into system health.
 
 **Responsibilities**:
@@ -1145,5 +1214,5 @@ Response: 200 OK
 
 ---
 
-*Last Updated: 2024-12-01*
-*Version: 1.0*
+*Last Updated: 2025-12-10*
+*Version: 1.1*
