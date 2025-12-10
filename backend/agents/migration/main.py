@@ -670,10 +670,20 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
             if use_llm:
                 self.logger.info("Using LLM-powered generator for optimized GitHub Actions workflow")
                 workflow_yaml = await self.generate_workflow_with_llm(pipeline_data, project_name)
+
+                # Post-process: Remove platform-mismatched commands
+                runner = pipeline_data.get('agent', 'ubuntu-latest')
+                self.logger.info(f"Applying platform cleanup for runner: {runner}")
+                workflow_yaml = self._clean_platform_commands(workflow_yaml, runner)
             else:
                 self.logger.info("Using template-based workflow generator")
                 workflow = self.convert_to_github_actions(pipeline_data, project_name)
                 workflow_yaml = yaml.dump(workflow, default_flow_style=False, sort_keys=False)
+
+                # Post-process: Remove platform-mismatched commands
+                runner = pipeline_data.get('agent', 'ubuntu-latest')
+                self.logger.info(f"Applying platform cleanup for runner: {runner}")
+                workflow_yaml = self._clean_platform_commands(workflow_yaml, runner)
 
             # Generate migration report
             report = {
