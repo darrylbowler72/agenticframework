@@ -7,6 +7,8 @@ Converts Jenkins pipelines to GitHub Actions workflows.
 import os
 import re
 import yaml
+import json
+import boto3
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
@@ -619,8 +621,9 @@ async def migrate_jenkins_job(request: MigrateJobRequest):
     1. Fetches the Jenkins job configuration
     2. Extracts the pipeline script
     3. Converts it to GitHub Actions workflow
-    4. Optionally creates a GitHub repository
-    5. Creates the workflow file in the repository
+    4. Loads GitHub token from Secrets Manager if not provided
+    5. Optionally creates a GitHub repository
+    6. Creates the workflow file in the repository
     """
     try:
         # Step 1: Connect to Jenkins and fetch job
@@ -652,10 +655,27 @@ async def migrate_jenkins_job(request: MigrateJobRequest):
                 detail=migration_result.get('error', 'Migration failed')
             )
 
-        # Step 3: Connect to GitHub
-        github_client = GitHubClient(request.github_token)
+        # Step 3: Get GitHub token (from request or Secrets Manager)
+        github_token = request.github_token
+        if not github_token or github_token.strip() == "":
+            migration_agent.logger.info("GitHub token not provided, loading from Secrets Manager")
+            try:
+                secrets_client = boto3.client('secretsmanager', region_name='us-east-1')
+                secret_value = secrets_client.get_secret_value(SecretId='dev-github-credentials')
+                secret_data = json.loads(secret_value['SecretString'])
+                github_token = secret_data.get('token', '')
+                migration_agent.logger.info("Successfully loaded GitHub token from Secrets Manager")
+            except Exception as e:
+                migration_agent.logger.error(f"Failed to load GitHub token from Secrets Manager: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"GitHub token not provided and failed to load from Secrets Manager: {str(e)}"
+                )
 
-        # Step 4: Create or use repository
+        # Step 4: Connect to GitHub
+        github_client = GitHubClient(github_token)
+
+        # Step 5: Create or use repository
         repo_name = request.github_repo_name or request.job_name.lower().replace(' ', '-')
         repo_info = None
 
@@ -674,7 +694,7 @@ async def migrate_jenkins_job(request: MigrateJobRequest):
                     detail=f"Repository '{repo_name}' not found and create_repo=False"
                 )
 
-        # Step 5: Create workflow file
+        # Step 6: Create workflow file
         migration_agent.logger.info(f"Creating workflow file in repository")
         workflow_name = f"{request.job_name.lower().replace(' ', '-')}.yml"
         workflow_info = github_client.create_workflow_file(
@@ -683,7 +703,7 @@ async def migrate_jenkins_job(request: MigrateJobRequest):
             workflow_name
         )
 
-        # Step 6: Return comprehensive result
+        # Step 7: Return comprehensive result
         return {
             'success': True,
             'jenkins_job': {
