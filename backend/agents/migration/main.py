@@ -139,28 +139,56 @@ class MigrationAgent(BaseAgent):
                     value = value.strip().strip('"').strip("'")
                     pipeline_data['environment'][key] = value
 
+        # Extract git repository URL if present
+        git_match = re.search(r'git\s+(?:branch:\s*["\']([^"\']+)["\'],?\s*)?url:\s*["\']([^"\']+)["\']', jenkinsfile)
+        if git_match:
+            pipeline_data['git_url'] = git_match.group(2)
+            if git_match.group(1):
+                pipeline_data['git_branch'] = git_match.group(1)
+
         # Extract stages
         stages_block = re.search(r'stages\s*{(.*)}', jenkinsfile, re.DOTALL)
         if stages_block:
             stages_content = stages_block.group(1)
 
-            # Find all stage blocks
-            stage_pattern = r'stage\s*\(["\']([^"\']+)["\']\)\s*{([^}]+(?:{[^}]+}[^}]+)*?)}'
+            # Find all stage blocks with better nesting support
+            stage_pattern = r'stage\s*\(["\']([^"\']+)["\']\)\s*{((?:[^{}]|{(?:[^{}]|{[^{}]*})*})*?)}'
             for match in re.finditer(stage_pattern, stages_content, re.DOTALL):
                 stage_name = match.group(1)
                 stage_content = match.group(2)
 
                 steps = []
                 # Extract steps from stage
-                steps_block = re.search(r'steps\s*{([^}]+(?:{[^}]+}[^}]+)*?)}', stage_content, re.DOTALL)
+                steps_block = re.search(r'steps\s*{((?:[^{}]|{(?:[^{}]|{[^{}]*})*})*?)}', stage_content, re.DOTALL)
                 if steps_block:
                     steps_content = steps_block.group(1)
 
-                    # Parse individual steps
-                    for line in steps_content.strip().split('\n'):
-                        line = line.strip()
-                        if line and not line.startswith('//'):
-                            steps.append(line)
+                    # Extract shell commands from script blocks and direct commands
+                    # Look for sh 'command' or sh "command"
+                    sh_commands = re.findall(r"sh\s+['\"]([^'\"]+)['\"]", steps_content)
+                    for cmd in sh_commands:
+                        steps.append(f"sh '{cmd}'")
+
+                    # Look for bat 'command' or bat "command"
+                    bat_commands = re.findall(r"bat\s+['\"]([^'\"]+)['\"]", steps_content)
+                    for cmd in bat_commands:
+                        steps.append(f"bat '{cmd}'")
+
+                    # Look for echo commands
+                    echo_commands = re.findall(r"echo\s+['\"]([^'\"]+)['\"]", steps_content)
+                    for cmd in echo_commands:
+                        steps.append(f"echo '{cmd}'")
+
+                    # Look for git commands
+                    if 'git ' in steps_content:
+                        steps.append('git checkout')
+
+                    # If no specific commands found, fall back to line-by-line parsing
+                    if not steps:
+                        for line in steps_content.strip().split('\n'):
+                            line = line.strip()
+                            if line and not line.startswith('//') and not line.startswith('script') and line not in ['{', '}', 'if', 'else']:
+                                steps.append(line)
 
                 pipeline_data['stages'].append({
                     'name': stage_name,
@@ -254,19 +282,62 @@ class MigrationAgent(BaseAgent):
             'steps': []
         }
 
-        # Add checkout step
-        job['steps'].append({
-            'name': 'Checkout code',
-            'uses': 'actions/checkout@v4'
-        })
+        # Detect if this is a Maven project based on steps
+        is_maven_project = any(
+            'mvnw' in str(step).lower() or 'mvn ' in str(step).lower()
+            for stage in pipeline_data['stages']
+            for step in stage['steps']
+        )
+
+        # Add checkout step - use custom repo URL if specified
+        if 'git_url' in pipeline_data and pipeline_data['git_url']:
+            job['steps'].append({
+                'name': 'Checkout repository',
+                'uses': 'actions/checkout@v4',
+                'with': {
+                    'repository': pipeline_data['git_url'].replace('https://github.com/', ''),
+                    'ref': pipeline_data.get('git_branch', 'main')
+                }
+            })
+        else:
+            job['steps'].append({
+                'name': 'Checkout code',
+                'uses': 'actions/checkout@v4'
+            })
+
+        # Add Java setup for Maven projects
+        if is_maven_project:
+            job['steps'].append({
+                'name': 'Set up JDK 17',
+                'uses': 'actions/setup-java@v4',
+                'with': {
+                    'java-version': '17',
+                    'distribution': 'temurin',
+                    'cache': 'maven'
+                }
+            })
+            job['steps'].append({
+                'name': 'Make Maven wrapper executable',
+                'run': 'chmod +x mvnw'
+            })
 
         # Convert each stage to steps
         for stage in pipeline_data['stages']:
-            # Add stage as a comment/name
             for step in stage['steps']:
-                converted_step = self._convert_step(step, stage['name'])
+                converted_step = self._convert_step(step, stage['name'], pipeline_data)
                 if converted_step:
                     job['steps'].append(converted_step)
+
+        # Add artifact upload for Maven projects
+        if is_maven_project:
+            job['steps'].append({
+                'name': 'Upload JAR artifact',
+                'uses': 'actions/upload-artifact@v4',
+                'with': {
+                    'name': 'application-jar',
+                    'path': 'target/*.jar'
+                }
+            })
 
         return job
 
@@ -277,21 +348,65 @@ class MigrationAgent(BaseAgent):
             'steps': []
         }
 
-        # Add checkout step
-        job['steps'].append({
-            'name': 'Checkout code',
-            'uses': 'actions/checkout@v4'
-        })
+        # Detect if this is a Maven project based on steps
+        is_maven_project = any('mvnw' in str(step).lower() or 'mvn ' in str(step).lower() for step in stage['steps'])
+
+        # Add checkout step - use custom repo URL if specified
+        if 'git_url' in pipeline_data and pipeline_data['git_url']:
+            # Checkout from specified repository
+            job['steps'].append({
+                'name': 'Checkout repository',
+                'uses': 'actions/checkout@v4',
+                'with': {
+                    'repository': pipeline_data['git_url'].replace('https://github.com/', ''),
+                    'ref': pipeline_data.get('git_branch', 'main')
+                }
+            })
+        else:
+            # Standard checkout
+            job['steps'].append({
+                'name': 'Checkout code',
+                'uses': 'actions/checkout@v4'
+            })
+
+        # Add Java setup for Maven projects
+        if is_maven_project:
+            job['steps'].append({
+                'name': 'Set up JDK 17',
+                'uses': 'actions/setup-java@v4',
+                'with': {
+                    'java-version': '17',
+                    'distribution': 'temurin',
+                    'cache': 'maven'
+                }
+            })
+
+            # Make mvnw executable
+            job['steps'].append({
+                'name': 'Make Maven wrapper executable',
+                'run': 'chmod +x mvnw'
+            })
 
         # Convert stage steps
         for step in stage['steps']:
-            converted_step = self._convert_step(step, stage['name'])
+            converted_step = self._convert_step(step, stage['name'], pipeline_data)
             if converted_step:
                 job['steps'].append(converted_step)
 
+        # Add artifact upload for package stage with Maven
+        if is_maven_project and stage['name'].lower() in ['package', 'build']:
+            job['steps'].append({
+                'name': 'Upload JAR artifact',
+                'uses': 'actions/upload-artifact@v4',
+                'with': {
+                    'name': 'application-jar',
+                    'path': 'target/*.jar'
+                }
+            })
+
         return job
 
-    def _convert_step(self, jenkins_step: str, stage_name: str) -> Optional[Dict]:
+    def _convert_step(self, jenkins_step: str, stage_name: str, pipeline_data: Dict) -> Optional[Dict]:
         """Convert a single Jenkins step to GitHub Actions step."""
         step = None
 
@@ -300,9 +415,10 @@ class MigrationAgent(BaseAgent):
             # Extract command
             command = re.search(r'["\']([^"\']+)["\']', jenkins_step)
             if command:
+                cmd = command.group(1)
                 step = {
-                    'name': f'Run {stage_name} script',
-                    'run': command.group(1)
+                    'name': f'{stage_name}: {cmd[:40]}',
+                    'run': cmd
                 }
 
         # Handle echo commands
@@ -310,16 +426,14 @@ class MigrationAgent(BaseAgent):
             command = re.search(r'echo\s+["\']([^"\']+)["\']', jenkins_step)
             if command:
                 step = {
-                    'name': 'Echo message',
+                    'name': command.group(1),
                     'run': f'echo "{command.group(1)}"'
                 }
 
-        # Handle checkout
-        elif 'checkout' in jenkins_step.lower() or 'git' in jenkins_step.lower():
-            step = {
-                'name': 'Checkout code',
-                'uses': 'actions/checkout@v4'
-            }
+        # Handle checkout - skip it as we already added it at the job level
+        elif 'checkout' in jenkins_step.lower() or ('git' in jenkins_step.lower() and 'git_url' in pipeline_data):
+            # Skip since we handle checkout at job level
+            return None
 
         # Handle artifact archiving
         elif 'archiveArtifacts' in jenkins_step:
@@ -327,7 +441,7 @@ class MigrationAgent(BaseAgent):
             if artifacts_match:
                 step = {
                     'name': 'Upload artifacts',
-                    'uses': 'actions/upload-artifact@v3',
+                    'uses': 'actions/upload-artifact@v4',
                     'with': {
                         'name': 'build-artifacts',
                         'path': artifacts_match.group(1)
@@ -346,10 +460,10 @@ class MigrationAgent(BaseAgent):
                 }
             }
 
-        # Generic command fallback
-        elif jenkins_step:
+        # Generic command fallback - skip common control structures
+        elif jenkins_step and jenkins_step not in ['{', '}', 'if', 'else', 'script']:
             step = {
-                'name': f'Run: {jenkins_step[:50]}',
+                'name': f'{stage_name}: {jenkins_step[:40]}',
                 'run': jenkins_step.strip().rstrip(';')
             }
 
