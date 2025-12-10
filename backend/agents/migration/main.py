@@ -146,54 +146,41 @@ class MigrationAgent(BaseAgent):
             if git_match.group(1):
                 pipeline_data['git_branch'] = git_match.group(1)
 
-        # Extract stages
-        stages_block = re.search(r'stages\s*{(.*)}', jenkinsfile, re.DOTALL)
-        if stages_block:
-            stages_content = stages_block.group(1)
+        # Extract stages using a simpler approach that works with complex nesting
+        # Find each stage by name first, then extract everything until the next stage or end
+        stage_starts = [(m.start(), m.group(1)) for m in re.finditer(r'stage\s*\(["\']([^"\']+)["\']\)', jenkinsfile)]
 
-            # Find all stage blocks with better nesting support
-            stage_pattern = r'stage\s*\(["\']([^"\']+)["\']\)\s*{((?:[^{}]|{(?:[^{}]|{[^{}]*})*})*?)}'
-            for match in re.finditer(stage_pattern, stages_content, re.DOTALL):
-                stage_name = match.group(1)
-                stage_content = match.group(2)
+        for i, (start_pos, stage_name) in enumerate(stage_starts):
+            # Get content from this stage start to next stage start (or end)
+            end_pos = stage_starts[i + 1][0] if i + 1 < len(stage_starts) else len(jenkinsfile)
+            stage_content = jenkinsfile[start_pos:end_pos]
 
-                steps = []
-                # Extract steps from stage
-                steps_block = re.search(r'steps\s*{((?:[^{}]|{(?:[^{}]|{[^{}]*})*})*?)}', stage_content, re.DOTALL)
-                if steps_block:
-                    steps_content = steps_block.group(1)
+            steps = []
 
-                    # Extract shell commands from script blocks and direct commands
-                    # Look for sh 'command' or sh "command"
-                    sh_commands = re.findall(r"sh\s+['\"]([^'\"]+)['\"]", steps_content)
-                    for cmd in sh_commands:
-                        steps.append(f"sh '{cmd}'")
+            # Extract shell commands from anywhere in the stage content
+            # Look for sh 'command' or sh "command"
+            sh_commands = re.findall(r"sh\s+['\"]([^'\"]+)['\"]", stage_content)
+            for cmd in sh_commands:
+                steps.append(f"sh '{cmd}'")
 
-                    # Look for bat 'command' or bat "command"
-                    bat_commands = re.findall(r"bat\s+['\"]([^'\"]+)['\"]", steps_content)
-                    for cmd in bat_commands:
-                        steps.append(f"bat '{cmd}'")
+            # Look for bat 'command' or bat "command"
+            bat_commands = re.findall(r"bat\s+['\"]([^'\"]+)['\"]", stage_content)
+            for cmd in bat_commands:
+                steps.append(f"bat '{cmd}'")
 
-                    # Look for echo commands
-                    echo_commands = re.findall(r"echo\s+['\"]([^'\"]+)['\"]", steps_content)
-                    for cmd in echo_commands:
-                        steps.append(f"echo '{cmd}'")
+            # Look for echo commands
+            echo_commands = re.findall(r"echo\s+['\"]([^'\"]+)['\"]", stage_content)
+            for cmd in echo_commands:
+                steps.append(f"echo '{cmd}'")
 
-                    # Look for git commands
-                    if 'git ' in steps_content:
-                        steps.append('git checkout')
+            # Look for git commands
+            if 'git ' in stage_content and 'git ' not in ''.join(steps):
+                steps.append('git checkout')
 
-                    # If no specific commands found, fall back to line-by-line parsing
-                    if not steps:
-                        for line in steps_content.strip().split('\n'):
-                            line = line.strip()
-                            if line and not line.startswith('//') and not line.startswith('script') and line not in ['{', '}', 'if', 'else']:
-                                steps.append(line)
-
-                pipeline_data['stages'].append({
-                    'name': stage_name,
-                    'steps': steps
-                })
+            pipeline_data['stages'].append({
+                'name': stage_name,
+                'steps': steps
+            })
 
         # Extract triggers
         if 'cron' in jenkinsfile:
