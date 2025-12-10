@@ -158,7 +158,7 @@ Pipeline Data:
 Project Name: {project_name}
 
 Create a GitHub Actions workflow that:
-1. Uses the correct runner (ubuntu-latest, windows-latest, or macos-latest)
+1. Uses the correct runner (ubuntu-latest, windows-latest, or macos-latest) based on the agent
 2. Sets up necessary tools (Java, Maven, Node, etc.)
 3. Includes proper checkout action for the repository
 4. Converts all stages to jobs with dependencies
@@ -167,6 +167,13 @@ Create a GitHub Actions workflow that:
 7. Sets up triggers (push, cron, etc.)
 8. Adds artifact uploads where appropriate
 9. Follows GitHub Actions best practices
+
+IMPORTANT RULES FOR COMMANDS:
+- If using ubuntu-latest or macos-latest runners, ONLY use Unix/Linux commands (./mvnw, chmod, sh, bash)
+- If using windows-latest runners, ONLY use Windows commands (mvnw.cmd, bat, powershell)
+- NEVER include both Unix and Windows commands in the same workflow
+- When Jenkins has conditional logic like isUnix() checks, extract only the commands for the target runner
+- Remove all platform-specific commands that don't match the runner
 
 Return ONLY the complete workflow YAML, starting with 'name:'. Do not include markdown code fences or explanations."""
 
@@ -184,6 +191,9 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
             elif '```' in workflow_yaml:
                 workflow_yaml = workflow_yaml.split('```')[1].split('```')[0].strip()
 
+            # Post-process: Remove platform-mismatched commands
+            workflow_yaml = self._clean_platform_commands(workflow_yaml, pipeline_data.get('agent', 'ubuntu-latest'))
+
             self.logger.info("LLM successfully generated GitHub Actions workflow")
             return workflow_yaml
 
@@ -191,6 +201,42 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
             self.logger.error(f"LLM workflow generation failed: {str(e)}, falling back to template-based generation")
             workflow_dict = self.convert_to_github_actions(pipeline_data, project_name)
             return yaml.dump(workflow_dict, default_flow_style=False, sort_keys=False)
+
+    def _clean_platform_commands(self, workflow_yaml: str, runner: str) -> str:
+        """
+        Remove platform-mismatched commands from the workflow.
+        For Linux/Mac runners, remove Windows commands. For Windows runners, remove Unix commands.
+        """
+        lines = workflow_yaml.split('\n')
+        cleaned_lines = []
+        skip_step = False
+
+        for i, line in enumerate(lines):
+            # Check if this is a step with a run command
+            if '- name:' in line and i + 1 < len(lines) and 'run:' in lines[i + 1]:
+                next_line = lines[i + 1]
+                run_command = next_line.split('run:', 1)[1].strip() if 'run:' in next_line else ""
+
+                # For Linux/Mac runners, skip Windows commands
+                if runner in ['ubuntu-latest', 'macos-latest']:
+                    if any(cmd in run_command for cmd in ['mvnw.cmd', 'gradlew.bat', '.bat', '.cmd', 'powershell']):
+                        skip_step = True
+                        continue
+                # For Windows runners, skip Unix commands
+                elif runner == 'windows-latest':
+                    if run_command.startswith('./') and not any(ext in run_command for ext in ['.cmd', '.bat']):
+                        skip_step = True
+                        continue
+
+            # Skip the run line if we're skipping the step
+            if skip_step and 'run:' in line:
+                skip_step = False
+                continue
+
+            if not skip_step:
+                cleaned_lines.append(line)
+
+        return '\n'.join(cleaned_lines)
 
     def parse_jenkinsfile(self, jenkinsfile: str) -> Dict[str, Any]:
         """
