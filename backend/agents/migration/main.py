@@ -136,11 +136,11 @@ Be thorough - extract ALL stages, steps, commands, and configuration details."""
                 json_str = content.strip()
 
             pipeline_data = json.loads(json_str)
-            self.log_info(f"LLM successfully parsed pipeline with {len(pipeline_data.get('stages', []))} stages")
+            self.logger.info(f"LLM successfully parsed pipeline with {len(pipeline_data.get('stages', []))} stages")
             return pipeline_data
 
         except Exception as e:
-            self.log_error(f"LLM parsing failed: {str(e)}, falling back to regex parser")
+            self.logger.error(f"LLM parsing failed: {str(e)}, falling back to regex parser")
             return self.parse_jenkinsfile(jenkinsfile)
 
     async def generate_workflow_with_llm(self, pipeline_data: Dict, project_name: str) -> str:
@@ -184,11 +184,11 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
             elif '```' in workflow_yaml:
                 workflow_yaml = workflow_yaml.split('```')[1].split('```')[0].strip()
 
-            self.log_info("LLM successfully generated GitHub Actions workflow")
+            self.logger.info("LLM successfully generated GitHub Actions workflow")
             return workflow_yaml
 
         except Exception as e:
-            self.log_error(f"LLM workflow generation failed: {str(e)}, falling back to template-based generation")
+            self.logger.error(f"LLM workflow generation failed: {str(e)}, falling back to template-based generation")
             workflow_dict = self.convert_to_github_actions(pipeline_data, project_name)
             return yaml.dump(workflow_dict, default_flow_style=False, sort_keys=False)
 
@@ -572,10 +572,10 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
 
             # Parse Jenkinsfile with LLM (falls back to regex if LLM fails)
             if use_llm:
-                self.log_info("Using LLM-powered parser for intelligent Jenkinsfile analysis")
+                self.logger.info("Using LLM-powered parser for intelligent Jenkinsfile analysis")
                 pipeline_data = await self.parse_jenkinsfile_with_llm(jenkinsfile)
             else:
-                self.log_info("Using regex-based parser")
+                self.logger.info("Using regex-based parser")
                 pipeline_data = self.parse_jenkinsfile(jenkinsfile)
 
             if pipeline_data.get('type') == 'unknown':
@@ -586,10 +586,10 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
 
             # Generate GitHub Actions workflow with LLM (falls back to template-based if LLM fails)
             if use_llm:
-                self.log_info("Using LLM-powered generator for optimized GitHub Actions workflow")
+                self.logger.info("Using LLM-powered generator for optimized GitHub Actions workflow")
                 workflow_yaml = await self.generate_workflow_with_llm(pipeline_data, project_name)
             else:
-                self.log_info("Using template-based workflow generator")
+                self.logger.info("Using template-based workflow generator")
                 workflow = self.convert_to_github_actions(pipeline_data, project_name)
                 workflow_yaml = yaml.dump(workflow, default_flow_style=False, sort_keys=False)
 
