@@ -1448,5 +1448,5 @@ Response: 200 OK
 
 ---
 
-*Last Updated: 2025-12-10*
-*Version: 1.1*
+*Last Updated: 2025-12-11*
+*Version: 1.1.1*
