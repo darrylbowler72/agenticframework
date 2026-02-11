@@ -1,9 +1,9 @@
 """
-Remediation Agent - Auto-fixes broken CI/CD pipelines.
+Remediation Agent - Auto-fixes broken CI/CD pipelines using LangGraph.
 
 The Remediation Agent analyzes pipeline failures using AI and automatically
-applies fixes for common issues like dependency problems, environment configs,
-flaky tests, and resource limits.
+applies fixes for common issues. Uses a LangGraph StateGraph with a feedback
+loop that supports retries (up to 3 attempts) for failed auto-fix operations.
 """
 
 import json
@@ -19,12 +19,13 @@ sys.path.append('../..')
 from common.agent_base import BaseAgent
 from common.version import __version__
 from common.mcp_client import GitHubMCPClient
+from common.graphs import build_remediation_graph
 
 
 app = FastAPI(
     title="Remediation Agent",
-    description="Automatically diagnoses and fixes CI/CD pipeline failures",
-    version="1.0.0"
+    description="Automatically diagnoses and fixes CI/CD pipeline failures using LangGraph",
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -37,7 +38,7 @@ app.add_middleware(
 
 
 class RemediationAgent(BaseAgent):
-    """Remediation Agent implementation."""
+    """Remediation Agent using LangGraph for feedback-loop auto-remediation."""
 
     def __init__(self):
         super().__init__(agent_name="remediation")
@@ -45,7 +46,8 @@ class RemediationAgent(BaseAgent):
         self.playbooks_table = None
         self.actions_table = None
         self._initialize_tables()
-        self.logger.info("Remediation Agent initialized")
+        self.remediation_graph = build_remediation_graph(self)
+        self.logger.info("Remediation Agent initialized with LangGraph feedback loop")
 
     def _initialize_tables(self):
         """Initialize DynamoDB tables."""
@@ -72,7 +74,12 @@ class RemediationAgent(BaseAgent):
 
     async def handle_pipeline_failure(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Main remediation workflow.
+        Main remediation workflow using LangGraph.
+
+        The LangGraph graph handles:
+        1. Fetch logs -> AI analysis -> Find playbook
+        2. Conditional auto-fix with retry loop (up to 3 attempts)
+        3. Store action record and notify developer
 
         Args:
             event_data: Pipeline failure event data
@@ -83,39 +90,28 @@ class RemediationAgent(BaseAgent):
         pipeline_id = event_data.get('pipeline_id')
         project_id = event_data.get('project_id')
 
-        self.logger.info(f"Handling pipeline failure: {pipeline_id} in project {project_id}")
+        self.logger.info(f"Handling pipeline failure via LangGraph: {pipeline_id} in project {project_id}")
 
         await self._initialize_github()
 
-        # Fetch pipeline logs
-        logs = await self._fetch_pipeline_logs(pipeline_id, project_id)
+        # Run the LangGraph remediation graph
+        initial_state = {
+            "pipeline_id": pipeline_id,
+            "project_id": project_id,
+            "event_data": event_data,
+            "retry_count": 0,
+        }
 
-        # AI-powered root cause analysis
-        analysis = await self._analyze_failure(logs, event_data)
+        result = await self.remediation_graph.ainvoke(initial_state)
 
-        # Find matching playbook
-        playbook = await self._find_playbook(
-            category=analysis['category'],
-            failure_pattern=analysis.get('failure_pattern', '')
-        )
+        self.logger.info(f"LangGraph remediation complete: outcome={result.get('outcome')}")
 
-        # Execute remediation if applicable
-        if playbook and playbook.get('auto_fix_enabled') and analysis['risk_level'] == 'low':
-            result = await self._execute_playbook(playbook, analysis, pipeline_id, project_id)
-        else:
-            result = {
-                'outcome': 'manual_intervention_required',
-                'reason': 'High risk or no matching playbook',
-                'analysis': analysis
-            }
-
-        # Store remediation action
-        await self._store_action(pipeline_id, project_id, analysis, result)
-
-        # Notify developer
-        await self._notify_developer(result, analysis)
-
-        return result
+        return {
+            "outcome": result.get("outcome", "unknown"),
+            "analysis": result.get("analysis", {}),
+            "execution_result": result.get("execution_result", {}),
+            "notification_sent": result.get("notification_sent", False),
+        }
 
     async def _fetch_pipeline_logs(self, pipeline_id: int, project_id: str) -> str:
         """

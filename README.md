@@ -97,6 +97,7 @@ curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/planner/health
 
 ## Key Capabilities
 
+- **LangGraph Orchestration**: All agents use LangGraph StateGraphs for workflow logic with conditional routing, retry cycles, and automatic fallbacks
 - **AI Scaffolding**: Generates repos, microservices, IaC, CI/CD pipelines automatically
 - **Multi-Agent System**: Specialized agents powered by Claude AI work together
 - **Pipeline Migration**: Converts Jenkins pipelines to GitHub Actions workflows automatically
@@ -166,16 +167,67 @@ await github.create_file(
 
 The MCP GitHub Server runs as an ECS Fargate service alongside the agents, accessible via private networking at `http://dev-mcp-github:8100`.
 
+## LangGraph Agent Orchestration
+
+All agents use **LangGraph** for internal workflow orchestration. Each agent builds a compiled `StateGraph` at initialization and runs it via `ainvoke()` for every request.
+
+### How It Works
+
+```
+HTTP Request → FastAPI endpoint → agent.graph.ainvoke(initial_state) → final_state → Response
+```
+
+Each graph is a directed graph of async node functions connected by edges (sequential) and conditional edges (branching/fallback). State flows through every node as a `TypedDict`.
+
+### Agent Graphs
+
+| Agent | Graph Pattern | Key Feature |
+|-------|--------------|-------------|
+| **Planner** | plan → fallback → store → dispatch | Conditional AI/fallback planning |
+| **Migration** | parse → generate → cleanup → report | Dual LLM/regex+template fallback |
+| **Chatbot** | analyze → execute → compose | Conditional action dispatch |
+| **Remediation** | fetch → analyze → fix → notify | Retry cycle (up to 3 attempts) |
+| **CodeGen** | init → generate → enhance → store → push → readme | Sequential pipeline |
+
+### Key Files
+
+- `backend/agents/common/graphs.py` - All graph builder functions
+- `backend/agents/common/graph_states.py` - TypedDict state definitions
+
+### Example: Migration Graph
+
+```python
+from common.graphs import build_migration_graph
+
+# Graph automatically handles:
+# 1. LLM parsing (falls back to regex on failure)
+# 2. LLM generation (falls back to templates on failure)
+# 3. Platform command cleanup
+# 4. Report generation
+
+result = await self.migration_graph.ainvoke({
+    "jenkinsfile_content": jenkinsfile,
+    "project_name": "my-service",
+})
+# result["cleaned_yaml"] contains the GitHub Actions workflow
+```
+
+See [Architecture Documentation](./architecture.md) for detailed graph diagrams and state schemas.
+
 ## Project Structure
 
 ```
 /backend/agents          # AI agent implementations (Python)
-  /planner              # Workflow orchestration
-  /codegen              # Code generation
-  /remediation          # Auto-remediation
-  /chatbot              # Conversational interface
-  /migration            # Jenkins to GitHub Actions migration
+  /planner              # Workflow orchestration (LangGraph: plan → fallback → store → dispatch)
+  /codegen              # Code generation (LangGraph: init → generate → enhance → store → push)
+  /remediation          # Auto-remediation (LangGraph: fetch → analyze → fix with retry loop)
+  /chatbot              # Conversational interface (LangGraph: intent → action → compose)
+  /migration            # Jenkins to GitHub Actions (LangGraph: parse → generate → cleanup)
   /common               # Shared utilities
+    graphs.py           # LangGraph graph builders for all agents
+    graph_states.py     # TypedDict state definitions
+    agent_base.py       # BaseAgent with AWS SDK integrations
+    mcp_client.py       # MCP GitHub client
 /iac                    # Infrastructure as Code
   /terraform            # AWS infrastructure
     /modules            # Reusable Terraform modules
@@ -191,10 +243,16 @@ The MCP GitHub Server runs as an ECS Fargate service alongside the agents, acces
 ```
 User → Chatbot/API Gateway → VPC Link → ALB → ECS Agents (6 services)
                                               ↓
+                                    LangGraph StateGraph (per agent)
+                                              ↓
                                     EventBridge + DynamoDB + S3
 ```
 
 ### Components
+
+**Orchestration**:
+- LangGraph StateGraphs for intra-agent workflow logic
+- Conditional routing, retry cycles, automatic fallbacks
 
 **Compute**:
 - ECS Fargate cluster with 5 agent services + 1 MCP server
@@ -385,17 +443,20 @@ aws secretsmanager get-secret-value \
 - Configure custom domain for API Gateway
 - Add authentication (AWS IAM or JWT)
 - Set up CloudWatch alarms
+- Add LangGraph checkpointing with DynamoDB for state persistence
 
 ### Short Term
 - GitLab integration for repository creation
 - ArgoCD for GitOps deployments
 - Policy Agent with OPA rules
+- LangGraph Studio integration for visual graph debugging
 
 ### Long Term
 - Multi-environment setup (staging, production)
 - Backstage developer portal
 - Observability Agent with OpenTelemetry
-- Advanced AI features and custom agents
+- LangGraph human-in-the-loop for high-risk remediation approvals
+- Cross-agent LangGraph supervisor for multi-agent coordination
 
 ## Documentation
 

@@ -240,21 +240,147 @@ The DevOps Agentic Framework is an autonomous, AI-driven platform designed to ac
 
 ---
 
+## LangGraph Integration
+
+### Overview
+
+All agents use **LangGraph** (`langgraph`) for internal workflow orchestration. LangGraph provides stateful, graph-based execution with conditional routing, retry cycles, and automatic fallback handling. Each agent builds a compiled `StateGraph` at initialization time and invokes it via `ainvoke()` for every request.
+
+### Why LangGraph
+
+| Before (Custom Code) | After (LangGraph) |
+|---|---|
+| Ad-hoc `try/except` fallback chains | Explicit conditional edges in a graph |
+| No retry logic for failed operations | Built-in cycle support for retry loops |
+| Task dependencies tracked but not enforced | Graph topology enforces execution order |
+| Scattered control flow across methods | Single visual graph per agent |
+| No standardized state management | TypedDict state flows through every node |
+
+### Architecture Pattern
+
+```
+Agent.__init__()
+    └── build_<agent>_graph(self)  →  compiled StateGraph
+            │
+            ├── Node: step_1(state) → partial state update
+            ├── Node: step_2(state) → partial state update
+            ├── Conditional Edge: route(state) → "node_a" | "node_b"
+            └── END
+
+Agent.handle_request()
+    └── graph.ainvoke(initial_state)  →  final state dict
+```
+
+### Agent Graph Definitions
+
+All graphs are defined in `backend/agents/common/graphs.py` and state types in `backend/agents/common/graph_states.py`.
+
+#### Planner Agent Graph
+```
+plan_tasks ──(success)──> store_workflow ──> dispatch_tasks ──> END
+     │
+  (failure)
+     │
+     v
+fallback_plan ──> store_workflow ──> dispatch_tasks ──> END
+```
+- **Conditional routing**: If Claude AI planning fails or returns empty tasks, automatically falls back to hardcoded plans
+- **State**: `WorkflowState` (template, parameters, workflow_id, tasks, status)
+
+#### Migration Agent Graph
+```
+parse_with_llm ──(success)──> generate_with_llm ──(success)──> cleanup_platform ──> build_report ──> END
+      │                              │
+   (failure)                      (failure)
+      v                              v
+parse_with_regex ──>          generate_with_template ──> cleanup_platform ──> build_report ──> END
+```
+- **Dual fallback**: Both parsing and generation have LLM-first with automatic template/regex fallback
+- **State**: `MigrationState` (jenkinsfile_content, pipeline_data, workflow_yaml, cleaned_yaml, report)
+
+#### Chatbot Agent Graph
+```
+analyze_intent ──(action_needed)──> execute_action ──> compose_response ──> END
+       │
+    (no action)
+       v
+compose_response ──> END
+```
+- **Conditional dispatch**: Only calls backend agents when Claude determines action is needed
+- **State**: `ChatState` (user_message, intent, action_needed, action_result, final_response)
+
+#### Remediation Agent Graph
+```
+fetch_logs ──> analyze_failure ──> find_playbook
+                                        │
+                        (auto-fixable) ──┤── (manual) ──> store_and_notify ──> END
+                              │
+                        execute_playbook ──(success)──> store_and_notify ──> END
+                              │          │
+                         (fail, retry<3) ┘
+                              │
+                         (fail, retry>=3) ──> store_and_notify ──> END
+```
+- **Retry cycle**: Failed auto-fix operations retry up to 3 times (LangGraph cycle)
+- **State**: `RemediationState` (pipeline_id, logs, analysis, playbook, retry_count, outcome)
+
+#### CodeGen Agent Graph
+```
+init_github ──> generate_templates ──> enhance_with_ai ──> store_artifacts ──> push_to_repo ──> generate_readme ──> END
+```
+- **Sequential pipeline**: Linear flow through template generation, AI enhancement, S3 storage, GitHub push, and README generation
+- **State**: `CodeGenState` (service_name, language, files, artifact_key, repo_url, files_generated)
+
+### State Types
+
+All state types are defined as `TypedDict` in `backend/agents/common/graph_states.py`:
+
+```python
+class WorkflowState(TypedDict, total=False):
+    template: str
+    parameters: Dict[str, Any]
+    workflow_id: str
+    tasks: List[Dict[str, Any]]
+    status: str
+    ...
+
+class MigrationState(TypedDict, total=False):
+    jenkinsfile_content: str
+    pipeline_data: Dict[str, Any]
+    workflow_yaml: str
+    cleaned_yaml: str
+    success: bool
+    ...
+```
+
+### Dependencies
+
+```
+langgraph>=0.2.0          # Graph-based agent orchestration
+langchain-core>=0.3.0     # Core abstractions
+langchain-anthropic>=0.3.0 # Claude model wrapper
+```
+
+---
+
 ## Architecture Principles
 
 ### 1. Agent-Oriented Design
 Each agent is a specialized microservice with a specific domain of expertise. Agents communicate via event-driven messaging and maintain their own state.
 
-### 2. Event-Driven Communication
+### 2. Graph-Based Orchestration
+Every agent uses a LangGraph StateGraph for internal workflow logic, providing explicit control flow, conditional routing, retry cycles, and state management.
+
+### 3. Event-Driven Communication
 AWS EventBridge serves as the central nervous system, routing events between agents and external systems.
 
-### 3. Declarative Infrastructure
+### 4. Declarative Infrastructure
 All infrastructure and application configurations are defined as code and stored in Git repositories.
 
-### 4. Zero-Trust Security
+### 5. Zero-Trust Security
 Every interaction requires authentication and authorization. Secrets are managed centrally via AWS Secrets Manager.
 
-### 5. Observable Everything
+### 6. Observable Everything
 All agents emit OpenTelemetry-compliant metrics, logs, and traces.
 
 ---
@@ -262,27 +388,34 @@ All agents emit OpenTelemetry-compliant metrics, logs, and traces.
 ## Agent Architecture
 
 ### Agent Runtime Model
-Each agent follows a consistent runtime pattern:
+Each agent follows a consistent runtime pattern powered by LangGraph:
 
 ```
 ┌──────────────────────────────────────────┐
 │              Agent Container             │
 │                                          │
 │  ┌────────────────────────────────────┐ │
-│  │    Event Listener (EventBridge)   │ │
+│  │    FastAPI (HTTP) + EventBridge    │ │
 │  └────────┬───────────────────────────┘ │
 │           │                              │
 │           ▼                              │
 │  ┌────────────────────────────────────┐ │
-│  │      Agent Logic (AI Model)        │ │
-│  │   - Planning / Execution           │ │
-│  │   - Context Management             │ │
-│  │   - Tool Integration               │ │
+│  │   LangGraph StateGraph (compiled) │ │
+│  │   ┌──────┐  ┌──────┐  ┌──────┐   │ │
+│  │   │Node 1├─►│Node 2├─►│Node N│   │ │
+│  │   └──────┘  └──┬───┘  └──────┘   │ │
+│  │                 │ conditional      │ │
+│  │                 ▼ routing          │ │
+│  │            ┌──────┐               │ │
+│  │            │Fallbk│               │ │
+│  │            └──────┘               │ │
 │  └────────┬───────────────────────────┘ │
 │           │                              │
 │           ▼                              │
 │  ┌────────────────────────────────────┐ │
-│  │    Action Executor / API Client    │ │
+│  │  BaseAgent (AWS SDK + Claude API) │ │
+│  │  S3 / DynamoDB / EventBridge /    │ │
+│  │  Secrets Manager / MCP Client     │ │
 │  └────────┬───────────────────────────┘ │
 │           │                              │
 │           ▼                              │
@@ -1448,5 +1581,5 @@ Response: 200 OK
 
 ---
 
-*Last Updated: 2025-12-11*
-*Version: 1.1.1*
+*Last Updated: 2026-02-11*
+*Version: 2.0.0 (LangGraph Integration)*

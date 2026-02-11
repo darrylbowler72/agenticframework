@@ -1,9 +1,9 @@
 """
-CodeGen Agent - Generates code, infrastructure, and configuration files.
+CodeGen Agent - Generates code, infrastructure, and configuration files using LangGraph.
 
 The CodeGen Agent (Scaffolding Agent) creates complete microservice projects
 including application code, infrastructure as code, CI/CD pipelines, and
-Kubernetes manifests.
+Kubernetes manifests. Uses LangGraph for sequential pipeline orchestration.
 """
 
 import json
@@ -23,12 +23,13 @@ from common.agent_base import BaseAgent
 from common.version import __version__
 from common.schemas.workflow import ServiceScaffoldRequest
 from common.mcp_client import GitHubMCPClient
+from common.graphs import build_codegen_graph
 
 
 app = FastAPI(
     title="CodeGen Agent",
-    description="Generates microservice code, infrastructure, and CI/CD configurations",
-    version="1.0.0"
+    description="Generates microservice code, infrastructure, and CI/CD configurations using LangGraph",
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -41,7 +42,7 @@ app.add_middleware(
 
 
 class CodeGenAgent(BaseAgent):
-    """CodeGen Agent implementation."""
+    """CodeGen Agent using LangGraph for pipeline orchestration."""
 
     def __init__(self):
         super().__init__(agent_name="codegen")
@@ -56,7 +57,9 @@ class CodeGenAgent(BaseAgent):
             autoescape=select_autoescape(['html', 'xml'])
         )
 
-        self.logger.info("CodeGen Agent initialized")
+        # Build LangGraph code generation pipeline
+        self.codegen_graph = build_codegen_graph(self)
+        self.logger.info("CodeGen Agent initialized with LangGraph pipeline")
 
     async def _initialize_github(self):
         """Initialize MCP GitHub client."""
@@ -94,7 +97,10 @@ class CodeGenAgent(BaseAgent):
         environment: str
     ) -> Dict[str, Any]:
         """
-        Generate complete microservice project.
+        Generate complete microservice project using LangGraph pipeline.
+
+        The LangGraph graph handles:
+        init_github -> generate_templates -> enhance_with_ai -> store_artifacts -> push_to_repo -> generate_readme
 
         Args:
             service_name: Service name (kebab-case)
@@ -106,38 +112,26 @@ class CodeGenAgent(BaseAgent):
         Returns:
             Generation results including repository URL
         """
-        self.logger.info(f"Generating {language} microservice: {service_name}")
+        self.logger.info(f"Generating {language} microservice via LangGraph: {service_name}")
 
-        # Initialize GitHub if needed
-        await self._initialize_github()
+        # Run the LangGraph codegen pipeline
+        initial_state = {
+            "service_name": service_name,
+            "language": language,
+            "database": database,
+            "api_type": api_type,
+            "environment": environment,
+        }
 
-        # Generate files from templates
-        files = await self._generate_from_templates(
-            service_name=service_name,
-            language=language,
-            database=database,
-            api_type=api_type
-        )
+        result = await self.codegen_graph.ainvoke(initial_state)
 
-        # Use Claude to enhance generated code
-        files = await self._enhance_with_ai(files, service_name, language)
-
-        # Store artifacts in S3
-        artifact_key = f"codegen/{service_name}/{datetime.utcnow().isoformat()}"
-        await self._store_artifacts(artifact_key, files)
-
-        # Create GitLab repository and push code
-        repo_url = await self._create_and_push_repository(service_name, files)
-
-        # Generate documentation
-        readme = await self._generate_readme(service_name, language, database, api_type)
-        files['README.md'] = readme
+        self.logger.info(f"LangGraph codegen complete: {result.get('files_generated', 0)} files generated")
 
         return {
             'service_name': service_name,
-            'repository_url': repo_url,
-            'artifact_s3_key': artifact_key,
-            'files_generated': len(files),
+            'repository_url': result.get('repo_url', ''),
+            'artifact_s3_key': result.get('artifact_key', ''),
+            'files_generated': result.get('files_generated', 0),
             'language': language,
             'database': database
         }

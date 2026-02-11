@@ -28,6 +28,23 @@ All agents inherit from `BaseAgent` (`backend/agents/common/agent_base.py`) whic
 - Structured JSON logging
 - Event-driven task processing
 
+### LangGraph Orchestration
+
+All agents use **LangGraph** for internal workflow orchestration. Each agent builds a compiled `StateGraph` at initialization time.
+
+**Key files**:
+- `backend/agents/common/graphs.py` - Graph builder functions for all agents
+- `backend/agents/common/graph_states.py` - TypedDict state definitions
+
+**Graph per agent**:
+- **Planner**: `build_planner_graph()` - plan → fallback → store → dispatch (conditional AI/fallback)
+- **Migration**: `build_migration_graph()` - parse → generate → cleanup → report (dual LLM/regex fallback)
+- **Chatbot**: `build_chatbot_graph()` - analyze_intent → execute_action → compose_response (conditional dispatch)
+- **Remediation**: `build_remediation_graph()` - fetch → analyze → fix → notify (retry cycle up to 3x)
+- **CodeGen**: `build_codegen_graph()` - init → generate → enhance → store → push → readme (sequential)
+
+**Pattern**: Each agent's `__init__` calls the builder, storing the compiled graph. Request handlers call `graph.ainvoke(initial_state)` and read results from the final state dict.
+
 ### Model Context Protocol (MCP)
 
 The framework uses MCP to separate concerns between agents and external integrations:
@@ -45,9 +62,9 @@ Agent → GitHubMCPClient → MCP GitHub Server → GitHub API
 ### Agent Communication Flow
 
 ```
-User/API → API Gateway → VPC Link → ALB → ECS Agent → EventBridge → Other Agents
-                                              ↓
-                                    DynamoDB (state) + S3 (artifacts)
+User/API → API Gateway → VPC Link → ALB → ECS Agent → LangGraph StateGraph → EventBridge → Other Agents
+                                              ↓                    ↓
+                                    Claude AI (anthropic)   DynamoDB (state) + S3 (artifacts)
 ```
 
 ## Build and Deploy
@@ -152,9 +169,20 @@ Each agent (`backend/agents/<agent-name>/main.py`):
 1. Extends `BaseAgent`
 2. Implements FastAPI application
 3. Defines Pydantic models for request/response
-4. Implements `process_task()` method for async task processing
-5. Uses Claude AI via `self.anthropic_client`
-6. Uses MCP for GitHub operations via `GitHubMCPClient()`
+4. Builds a LangGraph `StateGraph` via `build_<agent>_graph(self)` in `__init__`
+5. Implements `process_task()` method which delegates to `graph.ainvoke()`
+6. Uses Claude AI via `self.call_claude()` (called from graph nodes)
+7. Uses MCP for GitHub operations via `GitHubMCPClient()`
+
+### LangGraph Development
+
+When modifying agent workflow logic:
+- Graph builders are in `backend/agents/common/graphs.py`
+- State types are in `backend/agents/common/graph_states.py`
+- Each graph node is an async function taking state and returning a partial state dict
+- Use `add_conditional_edges()` for branching logic (fallbacks, intent routing)
+- Use cycles (node pointing back to itself or earlier) for retry loops
+- The agent instance (`self`) is captured in the closure, giving nodes access to `call_claude()`, `publish_event()`, etc.
 
 ### Infrastructure Modules
 
@@ -239,6 +267,8 @@ aws dynamodb scan --table-name dev-chatbot-sessions --region us-east-1
 
 ### Agent Development
 - All agents use async/await patterns (FastAPI + asyncio)
+- All agents use LangGraph StateGraphs for workflow logic
+- Graph nodes are async functions; use `graph.ainvoke()` for execution
 - Use `BaseAgent` logger (`self.logger.info()`) for structured JSON logs
 - Store state in DynamoDB via `self.workflows_table` or `self.tasks_table`
 - Use EventBridge for async agent-to-agent communication
@@ -259,7 +289,7 @@ aws dynamodb scan --table-name dev-chatbot-sessions --region us-east-1
 ### Version Management
 - Agent version in `backend/agents/common/version.py`
 - Update version in agent `main.py` FastAPI app if individual versioning needed
-- Migration agent uses semantic versioning (currently 1.0.26)
+- All agents at version 2.0.0 (LangGraph integration)
 
 ## API Reference
 

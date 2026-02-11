@@ -1,8 +1,9 @@
 """
-Planner Agent - Orchestrates multi-step workflows.
+Planner Agent - Orchestrates multi-step workflows using LangGraph.
 
 The Planner Agent receives high-level requests and decomposes them into
-actionable tasks for specialized agents.
+actionable tasks for specialized agents. Uses LangGraph StateGraph for
+workflow orchestration with conditional routing and fallback handling.
 """
 
 import json
@@ -16,6 +17,7 @@ sys.path.append('../..')
 
 from common.agent_base import BaseAgent
 from common.version import __version__
+from common.graphs import build_planner_graph
 from common.schemas.workflow import (
     WorkflowRequest,
     WorkflowResponse,
@@ -29,8 +31,8 @@ from common.schemas.workflow import (
 
 app = FastAPI(
     title="Planner Agent",
-    description="Orchestrates multi-step workflows by decomposing requests into tasks",
-    version="1.0.0"
+    description="Orchestrates multi-step workflows by decomposing requests into tasks using LangGraph",
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -43,11 +45,12 @@ app.add_middleware(
 
 
 class PlannerAgent(BaseAgent):
-    """Planner Agent implementation."""
+    """Planner Agent implementation using LangGraph for workflow orchestration."""
 
     def __init__(self):
         super().__init__(agent_name="planner")
-        self.logger.info("Planner Agent initialized")
+        self.workflow_graph = build_planner_graph(self)
+        self.logger.info("Planner Agent initialized with LangGraph workflow graph")
 
     async def process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Process a planning task."""
@@ -56,7 +59,9 @@ class PlannerAgent(BaseAgent):
 
     async def create_workflow(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Create a new workflow by decomposing the request into tasks.
+        Create a new workflow by running the LangGraph planner graph.
+
+        The graph handles: AI planning -> fallback if needed -> store -> dispatch events.
 
         Args:
             request_data: Workflow request data
@@ -67,36 +72,25 @@ class PlannerAgent(BaseAgent):
         workflow_id = f"wf-{uuid.uuid4().hex[:12]}"
         self.logger.info(f"Creating workflow {workflow_id} for template: {request_data.get('template')}")
 
-        # Use Claude to analyze request and create execution plan
-        tasks = await self._plan_tasks(
-            template=request_data['template'],
-            parameters=request_data['parameters']
-        )
+        # Run the LangGraph workflow graph
+        initial_state = {
+            "template": request_data["template"],
+            "parameters": request_data["parameters"],
+            "requested_by": request_data.get("requested_by", "unknown"),
+            "workflow_id": workflow_id,
+            "tasks": [],
+            "completed_tasks": [],
+            "failed_tasks": [],
+        }
 
-        # Store workflow in DynamoDB
-        await self._store_workflow(
-            workflow_id=workflow_id,
-            request_data=request_data,
-            tasks=tasks
-        )
+        result = await self.workflow_graph.ainvoke(initial_state)
 
-        # Publish task.created events for each task
-        for task in tasks:
-            await self.publish_event(
-                detail_type='task.created',
-                detail={
-                    'workflow_id': workflow_id,
-                    'task_id': task['task_id'],
-                    'agent': task['agent'],
-                    'input_params': task['input_params']
-                }
-            )
-
-        self.logger.info(f"Workflow {workflow_id} created with {len(tasks)} tasks")
+        tasks = result.get("tasks", [])
+        self.logger.info(f"Workflow {workflow_id} created with {len(tasks)} tasks via LangGraph")
 
         return {
             'workflow_id': workflow_id,
-            'status': 'in_progress',
+            'status': result.get('status', 'in_progress'),
             'tasks': tasks
         }
 

@@ -1,7 +1,9 @@
 """
-Migration Agent - Jenkins to GitHub Actions Converter
+Migration Agent - Jenkins to GitHub Actions Converter using LangGraph.
 
-Converts Jenkins pipelines to GitHub Actions workflows.
+Converts Jenkins pipelines to GitHub Actions workflows using a LangGraph
+StateGraph with conditional routing for LLM/regex parsing and LLM/template
+generation, with automatic fallbacks and platform cleanup.
 """
 
 import os
@@ -20,13 +22,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from common.agent_base import BaseAgent
 from common.version import __version__
+from common.graphs import build_migration_graph
 from migration.jenkins_client import JenkinsClient
 from migration.github_client import GitHubClient
 
 app = FastAPI(
     title="Migration Agent",
-    description="Converts Jenkins pipelines to GitHub Actions workflows and integrates with Jenkins/GitHub",
-    version="1.0.5"
+    description="Converts Jenkins pipelines to GitHub Actions workflows using LangGraph orchestration",
+    version="2.0.0"
 )
 
 
@@ -52,10 +55,14 @@ class AnalyzeRequest(BaseModel):
 
 
 class MigrationAgent(BaseAgent):
-    """Agent for migrating Jenkins pipelines to GitHub Actions."""
+    """Agent for migrating Jenkins pipelines to GitHub Actions using LangGraph."""
 
     def __init__(self):
         super().__init__(agent_name="migration")
+
+        # Build LangGraph migration pipeline
+        self.migration_graph = build_migration_graph(self)
+        self.logger.info("Migration Agent initialized with LangGraph pipeline")
 
         # Jenkins to GitHub Actions step mappings
         self.step_mappings = {
@@ -648,68 +655,51 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
         return step
 
     async def migrate_pipeline(self, jenkinsfile: str, project_name: str, use_llm: bool = True) -> Dict:
-        """Main migration method with LLM capabilities."""
+        """
+        Main migration method using LangGraph pipeline.
+
+        The LangGraph graph handles:
+        1. LLM parsing (with regex fallback)
+        2. LLM generation (with template fallback)
+        3. Platform command cleanup
+        4. Report generation
+
+        Args:
+            jenkinsfile: Jenkinsfile content
+            project_name: Target project name
+            use_llm: Whether to use LLM (always True with LangGraph, fallbacks are automatic)
+
+        Returns:
+            Migration result dict
+        """
         try:
-            warnings = []
+            self.logger.info(f"Starting LangGraph migration pipeline for: {project_name}")
 
-            # Parse Jenkinsfile with LLM (falls back to regex if LLM fails)
-            if use_llm:
-                self.logger.info("Using LLM-powered parser for intelligent Jenkinsfile analysis")
-                pipeline_data = await self.parse_jenkinsfile_with_llm(jenkinsfile)
-            else:
-                self.logger.info("Using regex-based parser")
-                pipeline_data = self.parse_jenkinsfile(jenkinsfile)
-
-            if pipeline_data.get('type') == 'unknown':
-                return {
-                    'success': False,
-                    'error': 'Unable to parse Jenkinsfile. Supported formats: Declarative and Scripted pipelines'
-                }
-
-            # Generate GitHub Actions workflow with LLM (falls back to template-based if LLM fails)
-            if use_llm:
-                self.logger.info("Using LLM-powered generator for optimized GitHub Actions workflow")
-                workflow_yaml = await self.generate_workflow_with_llm(pipeline_data, project_name)
-
-                # Post-process: Remove platform-mismatched commands
-                runner = pipeline_data.get('agent', 'ubuntu-latest')
-                self.logger.info(f"Applying platform cleanup for runner: {runner}")
-                workflow_yaml = self._clean_platform_commands(workflow_yaml, runner)
-            else:
-                self.logger.info("Using template-based workflow generator")
-                workflow = self.convert_to_github_actions(pipeline_data, project_name)
-                workflow_yaml = yaml.dump(workflow, default_flow_style=False, sort_keys=False)
-
-                # Post-process: Remove platform-mismatched commands
-                runner = pipeline_data.get('agent', 'ubuntu-latest')
-                self.logger.info(f"Applying platform cleanup for runner: {runner}")
-                workflow_yaml = self._clean_platform_commands(workflow_yaml, runner)
-
-            # Generate migration report
-            report = {
-                'source_type': 'Jenkins',
-                'target_type': 'GitHub Actions',
-                'pipeline_type': pipeline_data['type'],
-                'stages_converted': len(pipeline_data['stages']),
-                'environment_variables': len(pipeline_data['environment']),
-                'triggers_converted': len(pipeline_data['triggers']),
-                'timestamp': datetime.utcnow().isoformat()
+            # Run the LangGraph migration graph
+            initial_state = {
+                "jenkinsfile_content": jenkinsfile,
+                "project_name": project_name,
+                "use_llm": use_llm,
             }
 
-            # Add warnings
-            if not pipeline_data['triggers']:
-                warnings.append('No triggers found in Jenkinsfile. Default push trigger added.')
+            result = await self.migration_graph.ainvoke(initial_state)
 
-            if pipeline_data['type'] == 'scripted':
-                warnings.append('Scripted pipeline detected. Manual review recommended for complex logic.')
+            if not result.get("success"):
+                return {
+                    "success": False,
+                    "error": result.get("error", "Migration failed"),
+                }
 
-            self.logger.info(f"Successfully migrated pipeline: {project_name}")
+            self.logger.info(
+                f"LangGraph migration complete for {project_name} "
+                f"(parse: {result.get('parse_method')}, gen: {result.get('generation_method')})"
+            )
 
             return {
-                'success': True,
-                'github_workflow': workflow_yaml,
-                'migration_report': report,
-                'warnings': warnings
+                "success": True,
+                "github_workflow": result.get("cleaned_yaml", ""),
+                "migration_report": result.get("migration_report", {}),
+                "warnings": result.get("warnings", []),
             }
 
         except Exception as e:

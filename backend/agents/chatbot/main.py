@@ -1,8 +1,9 @@
 """
-DevOps at Your Service - Chatbot Agent
+DevOps at Your Service - Chatbot Agent using LangGraph.
 
 A conversational interface for the DevOps Agentic Framework.
-Provides natural language interaction with all framework capabilities.
+Uses LangGraph StateGraph for intent analysis, conditional action routing,
+and response composition.
 """
 
 import os
@@ -23,11 +24,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from common.agent_base import BaseAgent
 from common.version import __version__
+from common.graphs import build_chatbot_graph
 
 app = FastAPI(
     title="DevOps at Your Service - Chatbot",
-    description="Conversational interface for DevOps Agentic Framework",
-    version="1.0.0"
+    description="Conversational interface for DevOps Agentic Framework with LangGraph routing",
+    version="2.0.0"
 )
 
 # Add CORS middleware
@@ -67,7 +69,7 @@ class ChatResponse(BaseModel):
 
 
 class ChatbotAgent(BaseAgent):
-    """Chatbot agent for conversational DevOps interface."""
+    """Chatbot agent using LangGraph for intent routing and action dispatch."""
 
     def __init__(self):
         super().__init__(agent_name="chatbot")
@@ -82,6 +84,10 @@ class ChatbotAgent(BaseAgent):
             'remediation': f'{api_gateway_url}/remediate',
             'migration': f'{api_gateway_url}/migration'
         }
+
+        # Build LangGraph chat routing graph
+        self.chat_graph = build_chatbot_graph(self)
+        self.logger.info("Chatbot Agent initialized with LangGraph routing graph")
 
     async def process_task(self, task_data: Dict) -> Dict:
         """Process a task (required by BaseAgent, but chatbot uses process_message instead)."""
@@ -580,8 +586,47 @@ Analyze the intent and provide your response in JSON format."""
             self.logger.error(f"Error executing action: {e}")
             return {"error": str(e)}
 
+    def _format_action_response(self, base_response: str, intent: str, action_result: Dict) -> str:
+        """Format the action result into a user-friendly response string."""
+        response = base_response
+
+        if not action_result:
+            return response
+
+        if 'error' in action_result:
+            response += f"\n\nI encountered an error: {action_result['error']}"
+        elif intent == 'workflow':
+            response += f"\n\n Workflow created! ID: {action_result.get('workflow_id', 'N/A')}"
+        elif intent == 'codegen':
+            response += f"\n\n Service generated! {action_result.get('files_generated', 0)} files created."
+        elif intent == 'remediation':
+            response += f"\n\n Remediation initiated!"
+        elif intent == 'migration':
+            if action_result.get('success'):
+                report = action_result.get('migration_report', {})
+                response += f"\n\n Pipeline migrated successfully!"
+                response += f"\n- Pipeline type: {report.get('pipeline_type')}"
+                response += f"\n- Stages converted: {report.get('stages_converted')}"
+                response += f"\n- Environment variables: {report.get('environment_variables')}"
+                if action_result.get('warnings'):
+                    response += f"\n\n Warnings:"
+                    for warning in action_result['warnings']:
+                        response += f"\n- {warning}"
+        elif intent == 'github':
+            if action_result.get('success'):
+                response += f"\n\n GitHub operation completed successfully!"
+        elif intent == 'jenkins':
+            if action_result.get('success'):
+                response += f"\n\n Jenkins operation completed successfully!"
+
+        return response
+
     async def process_message(self, session_id: str, user_message: str) -> ChatResponse:
-        """Process user message and generate response."""
+        """
+        Process user message using the LangGraph chat routing graph.
+
+        The graph handles: intent analysis -> conditional action dispatch -> response composition.
+        """
 
         # Get session history
         session = await self.get_session(session_id)
@@ -594,116 +639,20 @@ Analyze the intent and provide your response in JSON format."""
             'timestamp': datetime.utcnow().isoformat()
         })
 
-        # Analyze intent
-        intent_analysis = await self.analyze_intent(user_message, messages)
+        # Run the LangGraph chat graph
+        initial_state = {
+            "session_id": session_id,
+            "user_message": user_message,
+            "conversation_history": messages,
+        }
 
-        # Execute action if needed
-        action_result = None
-        if intent_analysis.get('action_needed'):
-            action_result = await self.execute_action(
-                intent_analysis['intent'],
-                intent_analysis.get('parameters', {})
-            )
+        result = await self.chat_graph.ainvoke(initial_state)
 
-        # Generate response
-        assistant_message = intent_analysis.get('response',
+        assistant_message = result.get("final_response",
             "I'm here to help with your DevOps tasks! What would you like to do?")
-
-        # Add action result to response if available
-        if action_result:
-            if 'error' in action_result:
-                assistant_message += f"\n\nI encountered an error: {action_result['error']}"
-            elif intent_analysis['intent'] == 'workflow':
-                assistant_message += f"\n\n✅ Workflow created! ID: {action_result.get('workflow_id', 'N/A')}"
-            elif intent_analysis['intent'] == 'codegen':
-                assistant_message += f"\n\n✅ Service generated! {action_result.get('files_generated', 0)} files created."
-            elif intent_analysis['intent'] == 'remediation':
-                assistant_message += f"\n\n✅ Remediation initiated!"
-            elif intent_analysis['intent'] == 'migration':
-                if action_result.get('success'):
-                    report = action_result.get('migration_report', {})
-                    assistant_message += f"\n\n✅ Pipeline migrated successfully!"
-                    assistant_message += f"\n- Pipeline type: {report.get('pipeline_type')}"
-                    assistant_message += f"\n- Stages converted: {report.get('stages_converted')}"
-                    assistant_message += f"\n- Environment variables: {report.get('environment_variables')}"
-                    if action_result.get('warnings'):
-                        assistant_message += f"\n\n⚠️ Warnings:"
-                        for warning in action_result['warnings']:
-                            assistant_message += f"\n- {warning}"
-            elif intent_analysis['intent'] == 'github':
-                if action_result.get('success'):
-                    operation = intent_analysis.get('parameters', {}).get('operation')
-                    if operation == 'create_repo':
-                        repo = action_result.get('repository', {})
-                        assistant_message += f"\n\n✅ Repository created successfully!"
-                        assistant_message += f"\n- Name: {repo.get('full_name')}"
-                        assistant_message += f"\n- URL: {repo.get('url')}"
-                        assistant_message += f"\n- Private: {repo.get('private')}"
-                    elif operation == 'delete_repo':
-                        repo = action_result.get('repository', {})
-                        assistant_message += f"\n\n✅ Repository deleted successfully!"
-                        assistant_message += f"\n- Name: {repo.get('full_name')}"
-                    elif operation == 'list_repos':
-                        count = action_result.get('count', 0)
-                        owner = action_result.get('owner', 'N/A')
-                        repos = action_result.get('repositories', [])
-                        assistant_message += f"\n\n✅ Found {count} repositories for {owner}:"
-                        for repo in repos[:10]:  # Show first 10
-                            assistant_message += f"\n- {repo.get('name')} ({repo.get('language', 'N/A')}) - {repo.get('description', 'No description')}"
-                        if count > 10:
-                            assistant_message += f"\n... and {count - 10} more repositories"
-                    elif operation == 'create_branch':
-                        branch = action_result.get('branch', {})
-                        assistant_message += f"\n\n✅ Branch created successfully!"
-                        assistant_message += f"\n- Branch: {branch.get('branch_name')}"
-                        assistant_message += f"\n- Repository: {branch.get('repo_name')}"
-                        assistant_message += f"\n- From: {branch.get('from_branch')}"
-                        assistant_message += f"\n- URL: {branch.get('url')}"
-                    elif operation == 'create_gitflow':
-                        branches = action_result.get('branches', [])
-                        assistant_message += f"\n\n✅ Gitflow branches created successfully!"
-                        for branch_result in branches:
-                            if branch_result.get('result', {}).get('success'):
-                                assistant_message += f"\n- ✅ {branch_result['branch']}"
-                            else:
-                                assistant_message += f"\n- ❌ {branch_result['branch']}: {branch_result.get('result', {}).get('error', 'Unknown error')}"
-            elif intent_analysis['intent'] == 'jenkins':
-                if action_result.get('success'):
-                    operation = intent_analysis.get('parameters', {}).get('operation')
-                    if operation == 'list_jobs':
-                        jobs = action_result.get('jobs', [])
-                        count = action_result.get('jobs_count', 0)
-                        jenkins_url = action_result.get('jenkins_url', 'N/A')
-                        assistant_message += f"\n\n✅ Found {count} Jenkins jobs on {jenkins_url}:"
-                        for job in jobs[:15]:  # Show first 15
-                            color = job.get('color', 'notbuilt')
-                            status_icon = "🟢" if color in ['blue', 'success'] else "🔴" if color in ['red', 'failed'] else "🟡" if color in ['yellow', 'unstable'] else "⚪"
-                            assistant_message += f"\n{status_icon} {job.get('name')}"
-                        if count > 15:
-                            assistant_message += f"\n... and {count - 15} more jobs"
-                    elif operation == 'get_job':
-                        job_name = action_result.get('name', 'N/A')
-                        description = action_result.get('description', 'No description')
-                        url = action_result.get('url', 'N/A')
-                        buildable = action_result.get('buildable', False)
-                        last_build = action_result.get('last_build', {})
-                        assistant_message += f"\n\n✅ Jenkins Job Details:"
-                        assistant_message += f"\n- Name: {job_name}"
-                        assistant_message += f"\n- Description: {description}"
-                        assistant_message += f"\n- URL: {url}"
-                        assistant_message += f"\n- Buildable: {buildable}"
-                        if last_build:
-                            assistant_message += f"\n- Last Build: #{last_build.get('number')} - {last_build.get('result', 'N/A')}"
-                        if action_result.get('pipeline_script'):
-                            assistant_message += f"\n- Has Pipeline Script: Yes"
-                    elif operation == 'test_connection':
-                        jenkins_url = action_result.get('url', 'N/A')
-                        version = action_result.get('version', 'N/A')
-                        jobs_count = action_result.get('jobs_count', 0)
-                        assistant_message += f"\n\n✅ Jenkins connection successful!"
-                        assistant_message += f"\n- URL: {jenkins_url}"
-                        assistant_message += f"\n- Version: {version}"
-                        assistant_message += f"\n- Total Jobs: {jobs_count}"
+        action_result = result.get("action_result")
+        intent = result.get("intent", "general")
+        action_needed = result.get("action_needed", False)
 
         # Add assistant message
         messages.append({
@@ -718,7 +667,7 @@ Analyze the intent and provide your response in JSON format."""
         return ChatResponse(
             session_id=session_id,
             message=assistant_message,
-            agent_action=intent_analysis['intent'] if intent_analysis.get('action_needed') else None,
+            agent_action=intent if action_needed else None,
             action_result=action_result
         )
 

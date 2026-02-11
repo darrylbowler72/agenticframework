@@ -1,7 +1,8 @@
 """
 Base Agent class providing common functionality for all agents.
 
-Includes AWS SDK integrations, Claude API client, logging, and EventBridge communication.
+Includes AWS SDK integrations, Claude API client, logging, EventBridge
+communication, and LangGraph graph support utilities.
 """
 
 import json
@@ -27,6 +28,7 @@ class BaseAgent(ABC):
     - Claude AI API client
     - Structured logging
     - Event-driven task processing
+    - LangGraph StateGraph integration (graphs built by subclasses)
     """
 
     def __init__(self, agent_name: str):
