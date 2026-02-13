@@ -1,75 +1,64 @@
 # DevOps Agentic Framework
 
-An autonomous, AI-powered DevOps platform that accelerates software delivery through intelligent multi-agent automation, GitOps workflows, and enhanced developer experience.
-
-## Current Status
-
-**✅ FULLY OPERATIONAL**
-
-The framework is deployed and accessible via public API Gateway with a conversational chatbot interface!
-
-### Live Services
-
-**Public Chatbot Interface**:
-- **URL**: https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/
-- **Features**: Natural language interface for all DevOps operations
-- **Capabilities**: Create workflows, generate code, remediate issues, get help
-
-**API Gateway**: `https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev`
-- POST /workflows - Create workflows
-- POST /generate - Generate microservices
-- POST /remediate - Auto-fix issues
-- POST /chat - Chat with AI assistant
-- GET /*/health - Health checks
-
-**AI Agents Running** (6 services on AWS ECS Fargate):
-1. **Planner Agent** (port 8000) - Orchestrates multi-step workflows
-2. **CodeGen Agent** (port 8001) - Generates code and infrastructure
-3. **Remediation Agent** (port 8002) - Auto-fixes detected issues
-4. **Chatbot Agent** (port 8003) - Conversational DevOps interface
-5. **Migration Agent** (port 8004) - Converts Jenkins pipelines to GitHub Actions
-6. **MCP GitHub Server** (port 8100) - Model Context Protocol server for GitHub operations
-
-**Infrastructure** (90+ AWS resources deployed):
-- Application Load Balancer routing to ECS services
-- VPC with public/private subnets across 2 AZs
-- DynamoDB tables for state management
-- S3 buckets for artifacts and templates
-- EventBridge for event-driven communication
-- Secrets Manager for secure credentials
+An autonomous, AI-powered DevOps platform that accelerates software delivery through intelligent multi-agent automation. Runs locally on any machine with Podman or Docker.
 
 ## Quick Start
 
-### Try the Chatbot (Easiest Way)
+```bash
+# 1. Clone and setup
+cp .env.local.template .env
+# Edit .env: add your ANTHROPIC_API_KEY and GITHUB_TOKEN
 
-1. **Open in Browser**: https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/
+# 2. Start all 6 services
+bash scripts/run-local.sh up
 
-2. **Ask Questions**:
-   - "Create a new Python microservice"
-   - "Help me plan a deployment workflow"
-   - "Generate a REST API with PostgreSQL"
+# 3. Open the chatbot UI
+open http://localhost:8003
+```
 
-### Use the API Directly
+That's it. All 6 AI agents are now running locally.
+
+## Services
+
+| Service | Port | URL | Purpose |
+|---------|------|-----|---------|
+| Chatbot Agent | 8003 | http://localhost:8003 | Web UI - natural language DevOps interface |
+| Planner Agent | 8000 | http://localhost:8000/health | Orchestrates multi-step workflows |
+| CodeGen Agent | 8001 | http://localhost:8001/health | Generates microservices and infrastructure code |
+| Remediation Agent | 8002 | http://localhost:8002/health | Auto-fixes detected issues |
+| Migration Agent | 8004 | http://localhost:8004/health | Converts Jenkins pipelines to GitHub Actions |
+| MCP GitHub Server | 8100 | http://localhost:8100/health | GitHub operations via Model Context Protocol |
+
+## What You Can Do
+
+### Try the Chatbot
+
+Open http://localhost:8003 and ask:
+- "Create a new Python microservice"
+- "Help me plan a deployment workflow"
+- "Generate a REST API with PostgreSQL"
+- "Migrate my Jenkins pipeline to GitHub Actions"
+- "List my GitHub repositories"
+
+### Use the APIs Directly
 
 #### Create a Workflow
 ```bash
-curl -X POST https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/workflows \
+curl -X POST http://localhost:8000/workflows \
   -H "Content-Type: application/json" \
   -d '{
     "template": "microservice-rest-api",
     "requested_by": "user@example.com",
     "parameters": {
       "service_name": "user-service",
-      "language": "python",
-      "database": "postgresql",
-      "environment": "dev"
+      "language": "python"
     }
   }'
 ```
 
 #### Generate Microservice Code
 ```bash
-curl -X POST https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/generate \
+curl -X POST http://localhost:8001/generate \
   -H "Content-Type: application/json" \
   -d '{
     "service_name": "payment-service",
@@ -81,380 +70,152 @@ curl -X POST https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/generate
 
 #### Migrate Jenkins Pipeline
 ```bash
-curl -X POST https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/migration/migrate \
+curl -X POST http://localhost:8004/migration/migrate \
   -H "Content-Type: application/json" \
   -d '{
-    "jenkinsfile_content": "pipeline { agent any stages { stage(Build) { steps { sh maven clean install } } } }",
-    "project_name": "my-service",
-    "options": {}
+    "jenkinsfile_content": "pipeline { agent any stages { stage(Build) { steps { sh \"mvn clean install\" } } } }",
+    "project_name": "my-service"
   }'
 ```
 
 #### Check Health
 ```bash
-curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/planner/health
+curl http://localhost:8000/health
+curl http://localhost:8003/api/agents/health  # All agents at once
 ```
 
-## Key Capabilities
+## Management Commands
 
-- **AI Scaffolding**: Generates repos, microservices, IaC, CI/CD pipelines automatically
-- **Multi-Agent System**: Specialized agents powered by Claude AI work together
-- **Pipeline Migration**: Converts Jenkins pipelines to GitHub Actions workflows automatically
-- **Conversational Interface**: Natural language chatbot for DevOps operations
-- **MCP Integration**: Model Context Protocol for standardized tool integration
-- **Event-Driven**: EventBridge-based asynchronous task orchestration
-- **GitOps Ready**: Designed for ArgoCD integration (planned)
-- **Policy Automation**: OPA-based governance (planned)
-- **Observability**: OpenTelemetry integration (planned)
+```bash
+bash scripts/run-local.sh up       # Build and start all services
+bash scripts/run-local.sh down     # Stop and remove all services
+bash scripts/run-local.sh logs     # Tail logs from all services
+bash scripts/run-local.sh restart  # Stop then start all services
+bash scripts/run-local.sh status   # Show running service status
+```
 
-## Model Context Protocol (MCP)
+## Prerequisites
 
-The framework uses **Model Context Protocol** for standardized GitHub operations:
+- **Podman** (recommended) or Docker with compose support
+- **Anthropic API key** - get one at https://console.anthropic.com
+- **GitHub personal access token** - create at GitHub Settings > Developer settings > Personal access tokens (scopes: `repo`, `workflow`)
+
+## How It Works
 
 ### Architecture
+
+```
+User Browser → Chatbot (:8003) → Claude AI (intent analysis)
+                   │
+                   ├──> Planner Agent (:8000)
+                   ├──> CodeGen Agent (:8001)
+                   ├──> Remediation Agent (:8002)
+                   ├──> Migration Agent (:8004)
+                   └──> MCP GitHub Server (:8100) → GitHub API
+```
+
+All services run as containers on a shared bridge network (`agentic-local`). Agents discover each other via container DNS names.
+
+### LOCAL_MODE
+
+When `LOCAL_MODE=true`, cloud services are replaced with local implementations:
+
+| Cloud Service | Local Replacement |
+|---------------|-------------------|
+| DynamoDB | JSON files in `/data/db/` |
+| S3 | Filesystem at `/data/artifacts/` |
+| EventBridge | No-op with structured logging |
+| Secrets Manager | Environment variables |
+| Load Balancer | Container DNS names |
+
+No cloud SDK is imported. Zero cloud dependencies.
+
+### Model Context Protocol (MCP)
+
+GitHub operations are centralized through an MCP server:
 
 ```
 Agent → MCP Client → MCP GitHub Server → GitHub API
 ```
 
-### Benefits
+This provides a single point for GitHub credential management and a standardized interface for all agents.
 
-- **Separation of Concerns**: Agents focus on business logic, MCP handles GitHub operations
-- **Standardized Interface**: Consistent API across all agents
-- **Centralized Credentials**: GitHub tokens managed in one place
-- **Extensibility**: Easy to add GitLab, Bitbucket, or other Git providers
-- **Maintainability**: Update GitHub logic without changing agents
+## Key Capabilities
 
-### MCP GitHub Server
-
-**Location**: `backend/mcp-server/github/`
-**Port**: 8100
-**Endpoint**: `/mcp/call`
-
-**Available Tools**:
-- `github.create_repository` - Create GitHub repositories
-- `github.create_file` - Create files in repositories
-- `github.get_workflow_run` - Get GitHub Actions workflow details
-- `github.list_repositories` - List user repositories
-- `github.get_repository` - Get repository details
-
-### Usage Example
-
-```python
-from common.mcp_client import GitHubMCPClient
-
-# Initialize MCP client
-github = GitHubMCPClient()
-
-# Create repository
-repo = await github.create_repository(
-    name="my-service",
-    description="A new microservice",
-    private=True
-)
-
-# Create file
-await github.create_file(
-    repo_name="my-service",
-    file_path="README.md",
-    content="# My Service",
-    message="Initial commit"
-)
-```
-
-### Deployment
-
-The MCP GitHub Server runs as an ECS Fargate service alongside the agents, accessible via private networking at `http://dev-mcp-github:8100`.
+- **AI Scaffolding**: Generates repos, microservices, IaC, CI/CD pipelines automatically
+- **Multi-Agent System**: 6 specialized agents powered by Claude AI work together
+- **Pipeline Migration**: Converts Jenkins pipelines to GitHub Actions workflows (LLM-powered)
+- **Conversational Interface**: Natural language chatbot for all DevOps operations
+- **MCP Integration**: Model Context Protocol for standardized GitHub operations
+- **Cloud-Agnostic**: Runs on Podman, Docker, or any OCI-compatible runtime
 
 ## Project Structure
 
 ```
-/backend/agents          # AI agent implementations (Python)
-  /planner              # Workflow orchestration
-  /codegen              # Code generation
-  /remediation          # Auto-remediation
-  /chatbot              # Conversational interface
-  /migration            # Jenkins to GitHub Actions migration
-  /common               # Shared utilities
-/iac                    # Infrastructure as Code
-  /terraform            # AWS infrastructure
-    /modules            # Reusable Terraform modules
-    /environments       # Environment configs
-/scripts                # Deployment automation
-/user-stories           # Product requirements
+/backend/agents/          # AI agent implementations (Python)
+  /planner/               # Workflow orchestration
+  /codegen/               # Code generation
+  /remediation/           # Auto-remediation
+  /chatbot/               # Conversational interface (+ web UI)
+  /migration/             # Jenkins to GitHub Actions migration
+  /common/                # Shared utilities (BaseAgent, local_storage)
+/backend/mcp-server/
+  /github/                # MCP GitHub server
+/backend/Dockerfile.*     # One Dockerfile per service
+/docker-compose.local.yml # Podman/Docker compose for all services
+/scripts/
+  run-local.sh            # Launcher (up/down/logs/restart/status)
+/.env.local.template      # Template for API keys
 ```
 
-## Architecture
+## Development
 
-### High-Level Flow
-
-```
-User → Chatbot/API Gateway → VPC Link → ALB → ECS Agents (6 services)
-                                              ↓
-                                    EventBridge + DynamoDB + S3
-```
-
-### Components
-
-**Compute**:
-- ECS Fargate cluster with 5 agent services + 1 MCP server
-- Auto-scaling based on CPU/memory
-
-**Storage**:
-- DynamoDB: Workflow state, sessions
-- S3: Generated code, templates, artifacts
-
-**Integration**:
-- API Gateway HTTP API (public)
-- Application Load Balancer (internal)
-- VPC Link (secure connection)
-- EventBridge (event-driven messaging)
-
-**Security**:
-- Private subnets for all agents
-- Secrets Manager for API keys
-- IAM roles with minimal permissions
-
-## Deployment
-
-### Prerequisites
-- AWS Account with appropriate permissions
-- AWS CLI configured
-- Terraform >= 1.0
-- Podman or Docker
-- Anthropic API key
-
-### Deploy Infrastructure
-
-1. **Configure AWS Credentials**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your AWS credentials and API key
-   ```
-
-2. **Setup Terraform Backend**
-   ```bash
-   bash scripts/02-setup-aws-backend.sh
-   ```
-
-3. **Deploy Infrastructure**
-   ```bash
-   bash scripts/03-deploy-infrastructure.sh
-   ```
-
-4. **Store API Secrets**
-   ```bash
-   # Anthropic Claude API key
-   aws secretsmanager put-secret-value \
-     --secret-id dev-anthropic-api-key \
-     --secret-string '{"api_key":"your-anthropic-api-key"}'
-
-   # GitHub Personal Access Token (for repository operations)
-   aws secretsmanager put-secret-value \
-     --secret-id dev-github-credentials \
-     --secret-string '{"token":"your_github_token","owner":"darrylbowler72"}'
-   ```
-
-   **Creating a GitHub Personal Access Token:**
-   1. Go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
-   2. Click "Generate new token (classic)"
-   3. Select scopes: `repo` (all), `workflow`, `admin:repo_hook`
-   4. Copy the generated token and use it in the command above
-
-5. **Build and Deploy Agents**
-   ```bash
-   bash scripts/05-deploy-agents-podman.sh
-   ```
-
-### Verify Deployment
+### Run a Single Agent Locally
 
 ```bash
-# Check ECS services
-aws ecs list-services --cluster dev-agentic-cluster --region us-east-1
-
-# Get API Gateway URL
-cd iac/terraform && terraform output api_gateway_url
-
-# Test chatbot
-curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/health
-```
-
-## Local Deployment (Podman/Docker)
-
-Run the **entire multi-agent system locally** without any cloud infrastructure. This is cloud-agnostic and works with Podman, Docker, or any OCI-compatible container runtime.
-
-### Quick Start
-
-```bash
-# 1. Create your .env file from the template
-cp .env.local.template .env
-
-# 2. Edit .env and add your real API keys
-#    - ANTHROPIC_API_KEY (required)
-#    - GITHUB_TOKEN (required)
-
-# 3. Start all 6 services
-bash scripts/run-local.sh up
-```
-
-### Service URLs (Local)
-
-| Service | URL |
-|---------|-----|
-| Chatbot UI | http://localhost:8003 |
-| Planner Agent | http://localhost:8000/health |
-| CodeGen Agent | http://localhost:8001/health |
-| Remediation Agent | http://localhost:8002/health |
-| Migration Agent | http://localhost:8004/health |
-| MCP GitHub Server | http://localhost:8100/health |
-
-### Management Commands
-
-```bash
-bash scripts/run-local.sh up       # Build and start all services
-bash scripts/run-local.sh down     # Stop all services
-bash scripts/run-local.sh logs     # Tail logs from all services
-bash scripts/run-local.sh restart  # Restart all services
-bash scripts/run-local.sh status   # Show running services
-```
-
-### How LOCAL_MODE Works
-
-When `LOCAL_MODE=true` is set, AWS services are replaced with local implementations:
-
-| AWS Service | Local Replacement |
-|-------------|-------------------|
-| DynamoDB | JSON file-backed in-memory store (`/data/db/`) |
-| S3 | Local filesystem (`/data/artifacts/`) |
-| EventBridge | No-op with logging |
-| Secrets Manager | Environment variables (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`) |
-| ALB / API Gateway | Container DNS (e.g., `http://planner-agent:8000`) |
-
-No AWS SDK (`boto3`) is imported in local mode. Agent discovery uses standard container networking.
-
-### Prerequisites
-
-- **Podman** (recommended) or Docker with compose support
-- **Anthropic API key** - for Claude AI
-- **GitHub token** - for repository operations (scopes: `repo`, `workflow`)
-
-## Local Development (Single Agent)
-
-Run a single agent locally for development:
-
-```bash
-# Install dependencies
 cd backend
-pip install fastapi uvicorn pydantic boto3 anthropic httpx
+pip install -r agents/common/requirements.txt
 
-# Set environment variable
-export ENVIRONMENT=dev
+export LOCAL_MODE=true
+export ENVIRONMENT=local
+export ANTHROPIC_API_KEY=your-key
+export GITHUB_TOKEN=your-token
 
-# Run chatbot server
 python -m uvicorn agents.chatbot.main:app --host 0.0.0.0 --port 8003 --reload
 ```
 
-Access at: http://localhost:8003
+### Testing
+
+```bash
+cd backend/agents/chatbot
+pytest -v
+```
+
+### Adding a New Agent
+
+1. Create `backend/agents/<name>/main.py` extending `BaseAgent`
+2. Implement `process_task()` method
+3. Add FastAPI routes and `/health` endpoint
+4. Create `backend/Dockerfile.<name>`
+5. Add service to `docker-compose.local.yml`
 
 ## Monitoring
 
 ### View Logs
 ```bash
-# All agent logs
-aws logs tail /aws/ecs/dev-agentic-cluster --follow
-
-# Specific agent
-aws logs tail /aws/ecs/dev-agentic-cluster --follow --filter-pattern planner
-
-# API Gateway logs
-aws logs tail /aws/apigateway/dev-agentic-api --follow
+bash scripts/run-local.sh logs
 ```
 
-### Check Service Status
+### Check All Agent Health
 ```bash
-# ECS services
-aws ecs describe-services \
-  --cluster dev-agentic-cluster \
-  --services dev-planner-agent dev-codegen-agent dev-remediation-agent dev-chatbot-agent \
-  --region us-east-1
-
-# ALB target health
-aws elbv2 describe-target-health \
-  --target-group-arn <target-group-arn>
+curl http://localhost:8003/api/agents/health
 ```
 
-### DynamoDB Data
-```bash
-# List workflows
-aws dynamodb scan --table-name dev-workflows --region us-east-1
+### Persistence
 
-# List chat sessions
-aws dynamodb scan --table-name dev-chatbot-sessions --region us-east-1
-```
-
-## Cost Estimate
-
-Monthly cost for current deployment (24/7):
-
-| Service | Cost |
-|---------|------|
-| ECS Fargate (4 tasks) | ~$45-60 |
-| Application Load Balancer | ~$20-25 |
-| API Gateway | ~$3-5 |
-| VPC (NAT Gateways) | ~$100-120 |
-| DynamoDB | ~$5-10 |
-| S3 + CloudWatch | ~$5-10 |
-| **Total** | **~$180-230/month** |
-
-## Troubleshooting
-
-### Can't reach API Gateway
-```bash
-curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/health
-```
-Expected: JSON with `"status": "healthy"`
-
-### Agents not responding
-```bash
-# Check ECS service status
-aws ecs describe-services \
-  --cluster dev-agentic-cluster \
-  --services dev-chatbot-agent \
-  --region us-east-1
-```
-
-### ALB health checks failing
-```bash
-# Check target health
-aws elbv2 describe-target-health \
-  --target-group-arn <arn>
-```
-
-### Claude API errors
-```bash
-# Verify API key
-aws secretsmanager get-secret-value \
-  --secret-id dev-anthropic-api-key \
-  --region us-east-1
-```
-
-## What's Next
-
-### Immediate
-- Configure custom domain for API Gateway
-- Add authentication (AWS IAM or JWT)
-- Set up CloudWatch alarms
-
-### Short Term
-- GitLab integration for repository creation
-- ArgoCD for GitOps deployments
-- Policy Agent with OPA rules
-
-### Long Term
-- Multi-environment setup (staging, production)
-- Backstage developer portal
-- Observability Agent with OpenTelemetry
-- Advanced AI features and custom agents
+Data persists in the `local-data` volume at `/data`:
+- `/data/db/` - JSON database files (DynamoDB replacement)
+- `/data/artifacts/` - Stored artifacts (S3 replacement)
 
 ## Documentation
 
@@ -464,14 +225,7 @@ aws secretsmanager get-secret-value \
 ## Support
 
 - **Issues**: https://github.com/darrylbowler72/agenticframework/issues
-- **Discussions**: GitHub Discussions for Q&A
 
 ## License
 
 MIT License
-
----
-
-**Current Deployment**: Development environment (us-east-1)
-**Infrastructure**: 90+ AWS resources managed by Terraform
-**Status**: Operational and ready for use

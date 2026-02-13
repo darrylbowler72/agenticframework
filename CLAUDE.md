@@ -4,15 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DevOps Agentic Framework - An autonomous, AI-powered DevOps platform that accelerates software delivery through intelligent multi-agent automation, GitOps workflows, and enhanced developer experience.
-
-**Live API**: https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/
+DevOps Agentic Framework - An autonomous, AI-powered DevOps platform that runs locally via Podman/Docker containers. No cloud infrastructure required.
 
 ## Core Architecture
 
 ### Multi-Agent System
 
-The framework consists of 6 specialized AI agents running on AWS ECS Fargate:
+The framework consists of 6 specialized AI agents running as local containers:
 
 1. **Planner Agent** (port 8000) - Orchestrates multi-step workflows
 2. **CodeGen Agent** (port 8001) - Generates microservices and infrastructure code
@@ -22,52 +20,58 @@ The framework consists of 6 specialized AI agents running on AWS ECS Fargate:
 6. **MCP GitHub Server** (port 8100) - Model Context Protocol server for GitHub operations
 
 All agents inherit from `BaseAgent` (`backend/agents/common/agent_base.py`) which provides:
-- AWS SDK integrations (S3, DynamoDB, EventBridge, Secrets Manager)
 - Claude AI API client (via `anthropic` library)
 - GitHub API client (via `PyGithub`)
+- Local storage backends (DynamoDB, S3, EventBridge, Secrets Manager replacements)
 - Structured JSON logging
-- Event-driven task processing
+
+### LOCAL_MODE
+
+When `LOCAL_MODE=true` (always true in this branch), cloud services are replaced:
+- **DynamoDB** -> JSON file-backed in-memory store (`/data/db/`)
+- **S3** -> Local filesystem (`/data/artifacts/`)
+- **EventBridge** -> No-op with logging
+- **Secrets Manager** -> Environment variables (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`)
+
+Key file: `backend/agents/common/local_storage.py`
 
 ### Model Context Protocol (MCP)
 
-The framework uses MCP to separate concerns between agents and external integrations:
+The framework uses MCP to separate concerns between agents and GitHub:
 
 ```
-Agent → GitHubMCPClient → MCP GitHub Server → GitHub API
+Agent -> GitHubMCPClient -> MCP GitHub Server -> GitHub API
 ```
 
 **Key files**:
-- `backend/agents/common/mcp_client.py` - Client library used by agents
 - `backend/mcp-server/github/server.py` - MCP server implementing GitHub operations
-
-**Benefits**: Centralized credential management, standardized interface, easier to add new Git providers (GitLab, Bitbucket).
+- Service URL: `http://mcp-github:8100` (inter-container)
 
 ### Agent Communication Flow
 
 ```
-User/API → API Gateway → VPC Link → ALB → ECS Agent → EventBridge → Other Agents
-                                              ↓
-                                    DynamoDB (state) + S3 (artifacts)
+User Browser -> Chatbot (:8003) -> Claude AI -> Other Agents via HTTP
+                                                      |
+                                            Shared Volume /data/
 ```
 
 ## Build and Deploy
 
 ### Prerequisites
 
-- AWS CLI configured with credentials
-- Terraform >= 1.0
-- Podman or Docker
+- Podman or Docker with compose support
 - Python 3.11+
 - Anthropic API key
+- GitHub personal access token
 
-### Local Setup (No AWS Required)
+### Setup and Run
 
 ```bash
-# 1. Copy env template and fill in API keys
+# 1. Create .env from template
 cp .env.local.template .env
 # Edit .env: set ANTHROPIC_API_KEY and GITHUB_TOKEN
 
-# 2. Start all services locally via Podman/Docker
+# 2. Start all services
 bash scripts/run-local.sh up
 
 # 3. Access services
@@ -76,69 +80,13 @@ bash scripts/run-local.sh up
 # CodeGen:           http://localhost:8001/health
 # Remediation:       http://localhost:8002/health
 # Migration:         http://localhost:8004/health
-# MCP GitHub Server: http://localhost:8100/health
+# MCP GitHub:        http://localhost:8100/health
 
-# 4. Stop services
-bash scripts/run-local.sh down
-```
-
-When `LOCAL_MODE=true`, AWS services are replaced with local implementations:
-- DynamoDB -> JSON files in `/data/db/`
-- S3 -> Filesystem at `/data/artifacts/`
-- EventBridge -> No-op with logging
-- Secrets Manager -> Environment variables
-
-Key files: `backend/agents/common/local_storage.py`, `docker-compose.local.yml`, `scripts/run-local.sh`
-
-### AWS Setup (Cloud Deployment)
-
-```bash
-# 1. Setup AWS backend (S3 + DynamoDB for Terraform state)
-bash scripts/02-setup-aws-backend.sh
-
-# 2. Deploy infrastructure (VPC, ECS, ALB, API Gateway, DynamoDB, S3, etc.)
-bash scripts/03-deploy-infrastructure.sh
-
-# 3. Store secrets in AWS Secrets Manager
-aws secretsmanager put-secret-value \
-  --secret-id dev-anthropic-api-key \
-  --secret-string '{"api_key":"your-anthropic-api-key"}'
-
-aws secretsmanager put-secret-value \
-  --secret-id dev-github-credentials \
-  --secret-string '{"token":"your_github_token","owner":"darrylbowler72"}'
-
-# 4. Build and push agent Docker images to ECR
-bash scripts/05-deploy-agents-podman.sh
-```
-
-### Deploy Individual Agent
-
-```bash
-# Build and deploy a single agent
-bash scripts/deploy-<agent-name>.sh
-
-# Example: Deploy migration agent
-bash scripts/deploy-migration.sh
-```
-
-### Infrastructure Management
-
-```bash
-# Navigate to Terraform directory
-cd iac/terraform
-
-# Initialize with dev backend
-terraform init -backend-config=environments/dev/backend.tfvars
-
-# Plan changes
-terraform plan -var-file=environments/dev/terraform.tfvars
-
-# Apply changes
-terraform apply -var-file=environments/dev/terraform.tfvars
-
-# Destroy infrastructure (use with caution)
-bash scripts/06-destroy-infrastructure.sh
+# 4. Management
+bash scripts/run-local.sh logs     # View logs
+bash scripts/run-local.sh status   # Check status
+bash scripts/run-local.sh down     # Stop everything
+bash scripts/run-local.sh restart  # Restart all
 ```
 
 ## Development
@@ -151,8 +99,10 @@ cd backend
 pip install -r agents/common/requirements.txt
 
 # Set environment
-export ENVIRONMENT=dev
-export AWS_REGION=us-east-1
+export LOCAL_MODE=true
+export ENVIRONMENT=local
+export ANTHROPIC_API_KEY=your-key
+export GITHUB_TOKEN=your-token
 
 # Run agent locally (example: chatbot)
 python -m uvicorn agents.chatbot.main:app --host 0.0.0.0 --port 8003 --reload
@@ -173,6 +123,7 @@ pytest -v
 - Agents: `<agent-name>-agent` (e.g., `planner-agent`, `migration-agent`)
 - MCP Servers: `mcp-<service>` (e.g., `mcp-github`)
 - Dockerfiles: `backend/Dockerfile.<name>` (e.g., `Dockerfile.planner`, `Dockerfile.mcp-github`)
+- Build context: Project root (`.`)
 
 ## Key Technical Details
 
@@ -184,33 +135,31 @@ Each agent (`backend/agents/<agent-name>/main.py`):
 3. Defines Pydantic models for request/response
 4. Implements `process_task()` method for async task processing
 5. Uses Claude AI via `self.anthropic_client`
-6. Uses MCP for GitHub operations via `GitHubMCPClient()`
+6. Exposes `/health` endpoint
 
-### Infrastructure Modules
+### Service Discovery
 
-Terraform modules in `iac/terraform/modules/`:
-- `vpc/` - Network infrastructure (subnets, NAT, security groups)
-- `ecs/` - ECS cluster, services, task definitions
-- `api_gateway/` - HTTP API, VPC Link integration
-- `dynamodb/` - Tables for workflows, sessions, policy violations
-- `s3/` - Buckets for artifacts, templates, state
-- `eventbridge/` - Event bus for agent communication
+Agents find each other via container DNS names on the `agentic-local` network:
+- `http://planner-agent:8000`
+- `http://codegen-agent:8001`
+- `http://remediation-agent:8002`
+- `http://migration-agent:8004`
+- `http://mcp-github:8100`
 
-### Environment Configuration
+Configurable via env vars: `PLANNER_URL`, `CODEGEN_URL`, `REMEDIATION_URL`, `MIGRATION_URL`, `MCP_GITHUB_URL`
 
-Environments defined in `iac/terraform/environments/<env>/`:
-- `terraform.tfvars` - Variable values
-- `backend.tfvars` - S3 backend configuration
-- No `main.tf` files - root module is in `iac/terraform/`
+### Secrets via Environment Variables
 
-### Secrets Management
+All secrets are passed via `.env` file (gitignored):
+- `ANTHROPIC_API_KEY` - Claude AI API key
+- `GITHUB_TOKEN` - GitHub personal access token
+- `GITHUB_OWNER` - GitHub username (default: darrylbowler72)
 
-All secrets stored in AWS Secrets Manager:
-- `dev-anthropic-api-key` - Claude AI API key
-- `dev-github-credentials` - GitHub token and owner
-- `dev-slack-credentials` - Slack webhooks (if configured)
+### Persistence
 
-Agents retrieve secrets via `BaseAgent._get_anthropic_client()` and `BaseAgent._get_github_client()`.
+Data stored in shared `local-data` volume at `/data`:
+- `/data/db/` - JSON files (DynamoDB table replacement)
+- `/data/artifacts/` - File storage (S3 replacement)
 
 ## Migration Agent Specifics
 
@@ -224,110 +173,52 @@ The Migration Agent converts Jenkins pipelines to GitHub Actions workflows:
 **Key classes**:
 - `MigrationAgent` - Main agent logic
 - `JenkinsClient` - Jenkins API integration
-- `GitHubClient` - GitHub API integration (uses MCP internally)
-
-## Monitoring and Debugging
-
-### View ECS Logs
-
-```bash
-# All agents
-aws logs tail /aws/ecs/dev-agentic-cluster --follow
-
-# Specific agent
-aws logs tail /aws/ecs/dev-agentic-cluster --follow --filter-pattern migration
-
-# API Gateway logs
-aws logs tail /aws/apigateway/dev-agentic-api --follow
-```
-
-### Check Service Health
-
-```bash
-# ECS services status
-aws ecs describe-services \
-  --cluster dev-agentic-cluster \
-  --services dev-planner-agent dev-codegen-agent dev-remediation-agent dev-chatbot-agent dev-migration-agent \
-  --region us-east-1
-
-# Health check endpoints
-curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/planner/health
-curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/migration/health
-```
-
-### DynamoDB Tables
-
-```bash
-# List workflows
-aws dynamodb scan --table-name dev-workflows --region us-east-1
-
-# List chatbot sessions
-aws dynamodb scan --table-name dev-chatbot-sessions --region us-east-1
-```
+- `GitHubClient` - GitHub API integration
 
 ## Important Conventions
 
 ### Agent Development
 - All agents use async/await patterns (FastAPI + asyncio)
 - Use `BaseAgent` logger (`self.logger.info()`) for structured JSON logs
-- Store state in DynamoDB via `self.workflows_table` or `self.tasks_table`
-- Use EventBridge for async agent-to-agent communication
-- Use MCP for GitHub operations (don't call GitHub API directly)
-
-### Infrastructure Changes
-- Always test Terraform changes in `dev` environment first
-- Use `terraform plan` before applying
-- Infrastructure state is stored in S3 with DynamoDB locking
-- Never destroy infrastructure without backing up DynamoDB data
+- Use MCP for GitHub operations (don't call GitHub API directly from agents)
+- All containers must expose `/health` endpoint
 
 ### Container Deployment
-- Use Podman instead of Docker (Windows compatibility)
-- Tag images with both `:latest` and timestamp `:YYYYMMDD-HHMMSS`
-- ECR repositories are auto-created by deployment scripts
-- All containers must expose `/health` endpoint for ALB health checks
+- Use Podman (recommended) or Docker
+- All services defined in `docker-compose.local.yml`
+- `scripts/run-local.sh` is the primary launcher
+- `LOCAL_MODE=true` and `ENVIRONMENT=local` set on all containers
 
 ### Version Management
 - Agent version in `backend/agents/common/version.py`
 - Update version in agent `main.py` FastAPI app if individual versioning needed
-- Migration agent uses semantic versioning (currently 1.0.26)
 
 ## API Reference
 
-### Public Endpoints
+### Endpoints (localhost)
 
-- `POST /workflows` - Create workflow via Planner Agent
-- `POST /generate` - Generate microservice via CodeGen Agent
-- `POST /remediate` - Auto-fix issue via Remediation Agent
-- `POST /chat` - Chat interface via Chatbot Agent
-- `POST /migration/migrate` - Convert Jenkins pipeline
-- `POST /migration/analyze` - Analyze Jenkinsfile
-- `GET /migration/jenkins/list` - List Jenkins jobs
-- `GET /<agent>/health` - Health check
-
-All agents expose standard health check at `GET /<agent-name>/health`.
+- `POST http://localhost:8000/workflows` - Create workflow via Planner Agent
+- `POST http://localhost:8001/generate` - Generate microservice via CodeGen Agent
+- `POST http://localhost:8002/remediate` - Auto-fix issue via Remediation Agent
+- `POST http://localhost:8003/chat` - Chat interface via Chatbot Agent
+- `POST http://localhost:8004/migration/migrate` - Convert Jenkins pipeline
+- `POST http://localhost:8004/migration/analyze` - Analyze Jenkinsfile
+- `GET http://localhost:8004/migration/jenkins/jobs` - List Jenkins jobs
+- `GET http://localhost:*/health` - Health check (all agents)
 
 ## Common Troubleshooting
 
 ### Agent Not Starting
-1. Check CloudWatch logs for errors
-2. Verify secrets exist in Secrets Manager
-3. Check ECS task definition has correct environment variables
-4. Verify ECR image exists and is tagged correctly
+1. Check logs: `bash scripts/run-local.sh logs`
+2. Verify `.env` file has valid `ANTHROPIC_API_KEY` and `GITHUB_TOKEN`
+3. Check if ports are already in use on host
 
 ### MCP Connection Errors
-- MCP server runs at `http://dev-mcp-github:8100` (internal ECS service discovery)
-- Ensure security groups allow port 8100 communication
+- MCP server runs at `http://mcp-github:8100` (container-to-container)
+- Ensure mcp-github container is healthy: `curl http://localhost:8100/health`
 - Check `MCP_GITHUB_URL` environment variable
 
-### Terraform State Lock
-If deployment fails with state lock error:
-```bash
-# Force unlock (use with caution)
-cd iac/terraform
-terraform force-unlock <LOCK_ID>
-```
-
-### GitHub Token Issues
-- Token needs `repo`, `workflow`, `admin:repo_hook` scopes
-- Stored in `dev-github-credentials` secret as `{"token":"...", "owner":"..."}`
-- Token retrieved by both agents and MCP server
+### Container Build Failures
+- Ensure Podman/Docker is running
+- Check build context is project root (not `backend/`)
+- Try: `bash scripts/run-local.sh down` then `bash scripts/run-local.sh up`
