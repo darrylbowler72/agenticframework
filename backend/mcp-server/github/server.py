@@ -11,8 +11,12 @@ import logging
 from typing import Dict, List, Optional, Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import boto3
 from github import Github, GithubException
+
+LOCAL_MODE = os.getenv('LOCAL_MODE', 'false').lower() == 'true'
+
+if not LOCAL_MODE:
+    import boto3
 
 # Configure logging
 logging.basicConfig(
@@ -27,28 +31,36 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# AWS Secrets Manager client
-secrets_client = boto3.client('secretsmanager', region_name=os.getenv('AWS_REGION', 'us-east-1'))
-
 # Global GitHub client (initialized on first request)
 _github_client: Optional[Github] = None
 _github_owner: Optional[str] = None
 
+# AWS Secrets Manager client (only when not in LOCAL_MODE)
+if not LOCAL_MODE:
+    secrets_client = boto3.client('secretsmanager', region_name=os.getenv('AWS_REGION', 'us-east-1'))
+
 
 def get_github_client() -> tuple[Github, str]:
-    """Get or initialize GitHub client from AWS Secrets Manager."""
+    """Get or initialize GitHub client from Secrets Manager or environment variables."""
     global _github_client, _github_owner
 
     if _github_client is None:
-        environment = os.getenv('ENVIRONMENT', 'dev')
-        secret_name = f'{environment}-github-credentials'
-
         try:
-            response = secrets_client.get_secret_value(SecretId=secret_name)
-            secret = json.loads(response['SecretString'])
-
-            token = secret.get('token') or secret.get('github_token')
-            owner = secret.get('owner', 'darrylbowler72')
+            if LOCAL_MODE:
+                # Read credentials from environment variables (cloud-agnostic)
+                token = os.getenv('GITHUB_TOKEN', '')
+                owner = os.getenv('GITHUB_OWNER', 'darrylbowler72')
+                if not token:
+                    raise ValueError("GITHUB_TOKEN environment variable not set")
+                logger.info("Using GitHub credentials from environment variables")
+            else:
+                # Read credentials from AWS Secrets Manager
+                environment = os.getenv('ENVIRONMENT', 'dev')
+                secret_name = f'{environment}-github-credentials'
+                response = secrets_client.get_secret_value(SecretId=secret_name)
+                secret = json.loads(response['SecretString'])
+                token = secret.get('token') or secret.get('github_token')
+                owner = secret.get('owner', 'darrylbowler72')
 
             _github_client = Github(token)
             _github_owner = owner

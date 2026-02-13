@@ -965,22 +965,33 @@ async def migrate_jenkins_job(request: MigrateJobRequest):
                 detail=migration_result.get('error', 'Migration failed')
             )
 
-        # Step 3: Get GitHub token (from request or Secrets Manager)
+        # Step 3: Get GitHub token (from request, env var, or Secrets Manager)
         github_token = request.github_token
         if not github_token or github_token.strip() == "":
-            migration_agent.logger.info("GitHub token not provided, loading from Secrets Manager")
-            try:
-                secrets_client = boto3.client('secretsmanager', region_name='us-east-1')
-                secret_value = secrets_client.get_secret_value(SecretId='dev-github-credentials')
-                secret_data = json.loads(secret_value['SecretString'])
-                github_token = secret_data.get('token', '')
-                migration_agent.logger.info("Successfully loaded GitHub token from Secrets Manager")
-            except Exception as e:
-                migration_agent.logger.error(f"Failed to load GitHub token from Secrets Manager: {e}")
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"GitHub token not provided and failed to load from Secrets Manager: {str(e)}"
-                )
+            local_mode = os.getenv('LOCAL_MODE', 'false').lower() == 'true'
+            if local_mode:
+                # Cloud-agnostic: read from environment variable
+                github_token = os.getenv('GITHUB_TOKEN', '')
+                if not github_token:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="GitHub token not provided and GITHUB_TOKEN env var not set"
+                    )
+                migration_agent.logger.info("Loaded GitHub token from environment variable")
+            else:
+                migration_agent.logger.info("GitHub token not provided, loading from Secrets Manager")
+                try:
+                    secrets_client = boto3.client('secretsmanager', region_name='us-east-1')
+                    secret_value = secrets_client.get_secret_value(SecretId='dev-github-credentials')
+                    secret_data = json.loads(secret_value['SecretString'])
+                    github_token = secret_data.get('token', '')
+                    migration_agent.logger.info("Successfully loaded GitHub token from Secrets Manager")
+                except Exception as e:
+                    migration_agent.logger.error(f"Failed to load GitHub token from Secrets Manager: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"GitHub token not provided and failed to load from Secrets Manager: {str(e)}"
+                    )
 
         # Step 4: Connect to GitHub
         github_client = GitHubClient(github_token)

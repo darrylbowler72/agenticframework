@@ -1,0 +1,169 @@
+# Local Podman/Docker Compose - runs the full multi-agent system without AWS
+#
+# Usage:
+#   podman-compose -f docker-compose.local.yml up -d
+#   docker compose -f docker-compose.local.yml up -d
+#
+# Prerequisites:
+#   Copy .env.local.template to .env and fill in API keys
+
+services:
+  # MCP GitHub Server - starts first, used by all agents for GitHub operations
+  mcp-github:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.mcp-github
+    container_name: mcp-github
+    ports:
+      - "8100:8100"
+    environment:
+      - LOCAL_MODE=true
+      - ENVIRONMENT=local
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_OWNER=${GITHUB_OWNER:-darrylbowler72}
+    volumes:
+      - local-data:/data
+    networks:
+      - agentic-local
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # Planner Agent - orchestrates multi-step workflows
+  planner-agent:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.planner
+    container_name: planner-agent
+    ports:
+      - "8000:8000"
+    environment:
+      - LOCAL_MODE=true
+      - ENVIRONMENT=local
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_OWNER=${GITHUB_OWNER:-darrylbowler72}
+      - MCP_GITHUB_URL=http://mcp-github:8100
+    volumes:
+      - local-data:/data
+    networks:
+      - agentic-local
+    depends_on:
+      mcp-github:
+        condition: service_healthy
+
+  # CodeGen Agent - generates microservices and infrastructure code
+  codegen-agent:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.codegen
+    container_name: codegen-agent
+    ports:
+      - "8001:8001"
+    environment:
+      - LOCAL_MODE=true
+      - ENVIRONMENT=local
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_OWNER=${GITHUB_OWNER:-darrylbowler72}
+      - MCP_GITHUB_URL=http://mcp-github:8100
+    volumes:
+      - local-data:/data
+    networks:
+      - agentic-local
+    depends_on:
+      mcp-github:
+        condition: service_healthy
+
+  # Remediation Agent - auto-fixes detected issues
+  remediation-agent:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.remediation
+    container_name: remediation-agent
+    ports:
+      - "8002:8002"
+    environment:
+      - LOCAL_MODE=true
+      - ENVIRONMENT=local
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_OWNER=${GITHUB_OWNER:-darrylbowler72}
+      - MCP_GITHUB_URL=http://mcp-github:8100
+    volumes:
+      - local-data:/data
+    networks:
+      - agentic-local
+    depends_on:
+      mcp-github:
+        condition: service_healthy
+
+  # Migration Agent - converts Jenkins pipelines to GitHub Actions
+  migration-agent:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.migration
+    container_name: migration-agent
+    ports:
+      - "8004:8004"
+    environment:
+      - LOCAL_MODE=true
+      - ENVIRONMENT=local
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_OWNER=${GITHUB_OWNER:-darrylbowler72}
+      - MCP_GITHUB_URL=http://mcp-github:8100
+    volumes:
+      - local-data:/data
+    networks:
+      - agentic-local
+    depends_on:
+      mcp-github:
+        condition: service_healthy
+
+  # Chatbot Agent - conversational interface, depends on all other agents
+  chatbot-agent:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.chatbot
+    container_name: chatbot-agent
+    ports:
+      - "8003:8003"
+    environment:
+      - LOCAL_MODE=true
+      - ENVIRONMENT=local
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_OWNER=${GITHUB_OWNER:-darrylbowler72}
+      - MCP_GITHUB_URL=http://mcp-github:8100
+      # Agent discovery via container names (cloud-agnostic service mesh)
+      - PLANNER_URL=http://planner-agent:8000
+      - CODEGEN_URL=http://codegen-agent:8001
+      - REMEDIATION_URL=http://remediation-agent:8002
+      - MIGRATION_URL=http://migration-agent:8004
+    volumes:
+      - local-data:/data
+    networks:
+      - agentic-local
+    depends_on:
+      mcp-github:
+        condition: service_healthy
+      planner-agent:
+        condition: service_started
+      codegen-agent:
+        condition: service_started
+      remediation-agent:
+        condition: service_started
+      migration-agent:
+        condition: service_started
+
+volumes:
+  local-data:
+    driver: local
+
+networks:
+  agentic-local:
+    driver: bridge

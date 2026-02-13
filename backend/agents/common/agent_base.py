@@ -12,10 +12,24 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
-import boto3
 import anthropic
 from github import Github
-from botocore.exceptions import ClientError
+
+# LOCAL_MODE: replace AWS services with local implementations
+LOCAL_MODE = os.getenv('LOCAL_MODE', 'false').lower() == 'true'
+
+if LOCAL_MODE:
+    from common.local_storage import (
+        LocalDynamoDBResource, LocalS3Client,
+        LocalEventsClient, LocalSecretsClient
+    )
+
+    class ClientError(Exception):
+        """Placeholder for botocore.exceptions.ClientError when boto3 is not used."""
+        pass
+else:
+    import boto3
+    from botocore.exceptions import ClientError
 
 
 class BaseAgent(ABC):
@@ -42,11 +56,18 @@ class BaseAgent(ABC):
         # Setup logging
         self.logger = self._setup_logging()
 
-        # AWS clients
-        self.s3_client = boto3.client('s3')
-        self.dynamodb = boto3.resource('dynamodb')
-        self.events_client = boto3.client('events')
-        self.secrets_client = boto3.client('secretsmanager')
+        # Service clients (AWS or local depending on LOCAL_MODE)
+        if LOCAL_MODE:
+            self.s3_client = LocalS3Client()
+            self.dynamodb = LocalDynamoDBResource()
+            self.events_client = LocalEventsClient()
+            self.secrets_client = LocalSecretsClient()
+            self.logger.info("Running in LOCAL_MODE - using local storage backends")
+        else:
+            self.s3_client = boto3.client('s3')
+            self.dynamodb = boto3.resource('dynamodb')
+            self.events_client = boto3.client('events')
+            self.secrets_client = boto3.client('secretsmanager')
 
         # DynamoDB table references (initialized from environment variables)
         self.workflows_table = self._init_dynamodb_table('WORKFLOWS_TABLE_NAME', 'workflows')
@@ -114,6 +135,7 @@ class BaseAgent(ABC):
 
             # Verify table exists by checking its table_status
             # This will raise an exception if table doesn't exist
+            # In LOCAL_MODE, load() reads from the JSON file (always succeeds)
             table.load()
 
             return table
