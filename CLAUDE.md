@@ -60,7 +60,37 @@ User/API → API Gateway → VPC Link → ALB → ECS Agent → EventBridge → 
 - Python 3.11+
 - Anthropic API key
 
-### Initial Setup
+### Local Setup (No AWS Required)
+
+```bash
+# 1. Copy env template and fill in API keys
+cp .env.local.template .env
+# Edit .env: set ANTHROPIC_API_KEY and GITHUB_TOKEN
+
+# 2. Start all services locally via Podman/Docker
+bash scripts/run-local.sh up
+
+# 3. Access services
+# Chatbot UI:        http://localhost:8003
+# Planner:           http://localhost:8000/health
+# CodeGen:           http://localhost:8001/health
+# Remediation:       http://localhost:8002/health
+# Migration:         http://localhost:8004/health
+# MCP GitHub Server: http://localhost:8100/health
+
+# 4. Stop services
+bash scripts/run-local.sh down
+```
+
+When `LOCAL_MODE=true`, AWS services are replaced with local implementations:
+- DynamoDB -> JSON files in `/data/db/`
+- S3 -> Filesystem at `/data/artifacts/`
+- EventBridge -> No-op with logging
+- Secrets Manager -> Environment variables
+
+Key files: `backend/agents/common/local_storage.py`, `docker-compose.local.yml`, `scripts/run-local.sh`
+
+### AWS Setup (Cloud Deployment)
 
 ```bash
 # 1. Setup AWS backend (S3 + DynamoDB for Terraform state)

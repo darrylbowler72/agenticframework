@@ -187,6 +187,93 @@ aws logs tail /aws/ecs/dev-agentic-cluster --follow
 
 ---
 
+## Local Deployment Architecture (Cloud-Agnostic)
+
+The framework supports fully local deployment via `LOCAL_MODE=true`, replacing all AWS dependencies with local alternatives. This enables development, testing, and deployment on any platform supporting OCI containers (Podman, Docker, Kubernetes, etc.).
+
+### Local Architecture Diagram
+
+```
+                    localhost
+                       │
+         ┌─────────────┼──────────────────────────────────┐
+         │             │             │            │        │
+         ▼             ▼             ▼            ▼        ▼
+    ┌────────┐   ┌────────┐   ┌────────┐  ┌─────────┐┌────────┐
+    │Planner │   │CodeGen │   │Remediat│  │Migration││Chatbot │
+    │Agent   │   │Agent   │   │Agent   │  │Agent    ││Agent   │
+    │:8000   │   │:8001   │   │:8002   │  │:8004    ││:8003   │
+    └────┬───┘   └────┬───┘   └────┬───┘  └────┬────┘└───┬────┘
+         │            │            │            │         │
+         └────────────┼────────────┼────────────┘         │
+                      │            │                      │
+                      ▼            ▼                      │
+              ┌──────────────┐  ┌──────────┐              │
+              │ MCP GitHub   │  │ Shared   │◀─────────────┘
+              │ Server :8100 │  │ Volume   │
+              └──────────────┘  │ /data/   │
+                                │  db/     │ ← JSON persistence
+                                │  artifacts│ ← Local S3
+                                └──────────┘
+```
+
+### Service Replacement Matrix
+
+| AWS Service | Local Mode Implementation | File |
+|-------------|--------------------------|------|
+| DynamoDB | `LocalDynamoDBTable` - JSON file-backed dict | `backend/agents/common/local_storage.py` |
+| S3 | `LocalS3Client` - filesystem at `/data/artifacts/` | `backend/agents/common/local_storage.py` |
+| EventBridge | `LocalEventsClient` - no-op with structured logging | `backend/agents/common/local_storage.py` |
+| Secrets Manager | `LocalSecretsClient` - reads env vars | `backend/agents/common/local_storage.py` |
+| API Gateway | Direct container-to-container HTTP via DNS | `docker-compose.local.yml` |
+| ALB | Container service names (e.g., `planner-agent:8000`) | `docker-compose.local.yml` |
+
+### Key Design Decisions
+
+1. **Zero agent code changes**: Planner, CodeGen, and Remediation agents require no modifications. Only `BaseAgent` (common layer), Chatbot (URL routing), and Migration (direct secrets call) needed changes.
+
+2. **Conditional imports**: `boto3` is never imported in local mode, avoiding the AWS SDK dependency entirely.
+
+3. **Environment variable secrets**: All credentials are passed via environment variables (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, `GITHUB_OWNER`), making the system cloud-agnostic.
+
+4. **Container DNS for service discovery**: Agents find each other via container names (e.g., `http://planner-agent:8000`), which works identically across Podman, Docker, and Kubernetes.
+
+5. **Shared volume persistence**: A single `local-data` volume mounted at `/data` provides JSON persistence for DynamoDB tables and filesystem storage for S3 artifacts.
+
+### Files Involved
+
+| File | Role |
+|------|------|
+| `backend/agents/common/local_storage.py` | Local implementations of AWS services |
+| `backend/agents/common/agent_base.py` | `LOCAL_MODE` conditional logic in `BaseAgent` |
+| `backend/mcp-server/github/server.py` | Env var GitHub credentials fallback |
+| `backend/agents/chatbot/main.py` | Container URL routing for agent discovery |
+| `backend/agents/migration/main.py` | Env var GitHub token fallback |
+| `docker-compose.local.yml` | Compose file with all 6 services |
+| `scripts/run-local.sh` | Launcher script (up/down/logs/restart/status) |
+| `.env.local.template` | Template for required API keys |
+
+### Running Locally
+
+```bash
+# Setup
+cp .env.local.template .env
+# Edit .env with your ANTHROPIC_API_KEY and GITHUB_TOKEN
+
+# Start
+bash scripts/run-local.sh up
+
+# Verify
+curl http://localhost:8000/health  # Planner
+curl http://localhost:8003/health  # Chatbot
+curl http://localhost:8100/health  # MCP GitHub
+
+# Stop
+bash scripts/run-local.sh down
+```
+
+---
+
 ## System Overview
 
 ### Purpose

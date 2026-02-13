@@ -279,9 +279,68 @@ cd iac/terraform && terraform output api_gateway_url
 curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/health
 ```
 
-## Local Development
+## Local Deployment (Podman/Docker)
 
-Run the chatbot locally for development:
+Run the **entire multi-agent system locally** without any cloud infrastructure. This is cloud-agnostic and works with Podman, Docker, or any OCI-compatible container runtime.
+
+### Quick Start
+
+```bash
+# 1. Create your .env file from the template
+cp .env.local.template .env
+
+# 2. Edit .env and add your real API keys
+#    - ANTHROPIC_API_KEY (required)
+#    - GITHUB_TOKEN (required)
+
+# 3. Start all 6 services
+bash scripts/run-local.sh up
+```
+
+### Service URLs (Local)
+
+| Service | URL |
+|---------|-----|
+| Chatbot UI | http://localhost:8003 |
+| Planner Agent | http://localhost:8000/health |
+| CodeGen Agent | http://localhost:8001/health |
+| Remediation Agent | http://localhost:8002/health |
+| Migration Agent | http://localhost:8004/health |
+| MCP GitHub Server | http://localhost:8100/health |
+
+### Management Commands
+
+```bash
+bash scripts/run-local.sh up       # Build and start all services
+bash scripts/run-local.sh down     # Stop all services
+bash scripts/run-local.sh logs     # Tail logs from all services
+bash scripts/run-local.sh restart  # Restart all services
+bash scripts/run-local.sh status   # Show running services
+```
+
+### How LOCAL_MODE Works
+
+When `LOCAL_MODE=true` is set, AWS services are replaced with local implementations:
+
+| AWS Service | Local Replacement |
+|-------------|-------------------|
+| DynamoDB | JSON file-backed in-memory store (`/data/db/`) |
+| S3 | Local filesystem (`/data/artifacts/`) |
+| EventBridge | No-op with logging |
+| Secrets Manager | Environment variables (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`) |
+| ALB / API Gateway | Container DNS (e.g., `http://planner-agent:8000`) |
+
+No AWS SDK (`boto3`) is imported in local mode. Agent discovery uses standard container networking.
+
+### Prerequisites
+
+- **Podman** (recommended) or Docker with compose support
+- **Anthropic API key** - for Claude AI
+- **GitHub token** - for repository operations (scopes: `repo`, `workflow`)
+
+## Local Development (Single Agent)
+
+Run a single agent locally for development:
 
 ```bash
 # Install dependencies
