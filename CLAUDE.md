@@ -201,8 +201,8 @@ The Migration Agent converts Jenkins pipelines to GitHub Actions workflows:
 - `POST http://localhost:8001/generate` - Generate microservice via CodeGen Agent
 - `POST http://localhost:8002/remediate` - Auto-fix issue via Remediation Agent
 - `POST http://localhost:8003/chat` - Chat interface via Chatbot Agent
-- `POST http://localhost:8004/migration/migrate` - Convert Jenkins pipeline
-- `POST http://localhost:8004/migration/analyze` - Analyze Jenkinsfile
+- `POST http://localhost:8004/migrate` - Convert Jenkins pipeline
+- `POST http://localhost:8004/analyze` - Analyze Jenkinsfile
 - `GET http://localhost:8004/migration/jenkins/jobs` - List Jenkins jobs
 - `GET http://localhost:*/health` - Health check (all agents)
 

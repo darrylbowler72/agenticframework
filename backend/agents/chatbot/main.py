@@ -74,23 +74,13 @@ class ChatbotAgent(BaseAgent):
         self.environment = os.getenv('ENVIRONMENT', 'dev')
         self.sessions_table = self.dynamodb.Table(f'{self.environment}-chatbot-sessions')
 
-        # Agent endpoints - use container URLs in local mode, API Gateway in cloud
-        local_mode = os.getenv('LOCAL_MODE', 'false').lower() == 'true'
-        if local_mode:
-            self.agent_endpoints = {
-                'planner': os.getenv('PLANNER_URL', 'http://planner-agent:8000') + '/workflows',
-                'codegen': os.getenv('CODEGEN_URL', 'http://codegen-agent:8001') + '/generate',
-                'remediation': os.getenv('REMEDIATION_URL', 'http://remediation-agent:8002') + '/remediate',
-                'migration': os.getenv('MIGRATION_URL', 'http://migration-agent:8004') + '/migration'
-            }
-        else:
-            api_gateway_url = os.getenv('API_GATEWAY_URL', 'https://6zv33f750f.execute-api.us-east-1.amazonaws.com/dev')
-            self.agent_endpoints = {
-                'planner': f'{api_gateway_url}/workflows',
-                'codegen': f'{api_gateway_url}/generate',
-                'remediation': f'{api_gateway_url}/remediate',
-                'migration': f'{api_gateway_url}/migration'
-            }
+        # Agent endpoints via container DNS names (configurable via env vars)
+        self.agent_endpoints = {
+            'planner': os.getenv('PLANNER_URL', 'http://planner-agent:8000') + '/workflows',
+            'codegen': os.getenv('CODEGEN_URL', 'http://codegen-agent:8001') + '/generate',
+            'remediation': os.getenv('REMEDIATION_URL', 'http://remediation-agent:8002') + '/remediate',
+            'migration': os.getenv('MIGRATION_URL', 'http://migration-agent:8004') + '/migrate'
+        }
 
     async def process_task(self, task_data: Dict) -> Dict:
         """Process a task (required by BaseAgent, but chatbot uses process_message instead)."""
@@ -812,25 +802,13 @@ async def health_check():
 @app.get("/dev/api/agents/health")
 async def get_agents_health():
     """Get health status of all agents."""
-    local_mode = os.getenv('LOCAL_MODE', 'false').lower() == 'true'
-    if local_mode:
-        # Use container service names for health checks (cloud-agnostic)
-        agents = {
-            "planner": os.getenv('PLANNER_URL', 'http://planner-agent:8000') + '/health',
-            "codegen": os.getenv('CODEGEN_URL', 'http://codegen-agent:8001') + '/health',
-            "remediation": os.getenv('REMEDIATION_URL', 'http://remediation-agent:8002') + '/health',
-            "chatbot": "healthy",
-            "migration": os.getenv('MIGRATION_URL', 'http://migration-agent:8004') + '/health',
-        }
-    else:
-        alb_base_url = os.getenv('INTERNAL_ALB_URL', 'http://internal-dev-agents-alb-1798962120.us-east-1.elb.amazonaws.com')
-        agents = {
-            "planner": f"{alb_base_url}/planner/health",
-            "codegen": f"{alb_base_url}/codegen/health",
-            "remediation": f"{alb_base_url}/remediation/health",
-            "chatbot": "healthy",  # Self
-            "migration": f"{alb_base_url}/migration/health"
-        }
+    agents = {
+        "planner": os.getenv('PLANNER_URL', 'http://planner-agent:8000') + '/health',
+        "codegen": os.getenv('CODEGEN_URL', 'http://codegen-agent:8001') + '/health',
+        "remediation": os.getenv('REMEDIATION_URL', 'http://remediation-agent:8002') + '/health',
+        "chatbot": "healthy",
+        "migration": os.getenv('MIGRATION_URL', 'http://migration-agent:8004') + '/health',
+    }
 
     health_status = {}
 

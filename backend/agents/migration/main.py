@@ -8,7 +8,6 @@ import os
 import re
 import yaml
 import json
-import boto3
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
@@ -123,8 +122,8 @@ Be thorough - extract ALL stages, steps, commands, and configuration details."""
                 max_tokens=4000
             )
 
-            # Extract JSON from response
-            content = response['content'][0]['text']
+            # Extract JSON from response (call_claude returns a string)
+            content = response
 
             # Try to find JSON in the response
             import json
@@ -183,7 +182,7 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
                 max_tokens=4000
             )
 
-            workflow_yaml = response['content'][0]['text'].strip()
+            workflow_yaml = response.strip()
 
             # Remove markdown code fences if present
             if '```yaml' in workflow_yaml:
@@ -794,7 +793,7 @@ class GitHubConnectionRequest(BaseModel):
 
 class MigrateJobRequest(BaseModel):
     """Request to migrate a Jenkins job to GitHub."""
-    jenkins_url: str = "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins"
+    jenkins_url: str = "http://localhost:8080"
     jenkins_username: str = "admin"
     jenkins_password: str = "admin"
     job_name: str
@@ -806,7 +805,7 @@ class MigrateJobRequest(BaseModel):
 
 class CreateJobRequest(BaseModel):
     """Request to create a Jenkins job."""
-    jenkins_url: str = "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins"
+    jenkins_url: str = "http://localhost:8080"
     jenkins_username: str = "admin"
     jenkins_password: str = "admin"
     job_name: str
@@ -817,7 +816,7 @@ class CreateJobRequest(BaseModel):
 @app.get("/migration/jenkins/test")
 @app.get("/dev/migration/jenkins/test")
 async def test_jenkins_connection(
-    jenkins_url: str = "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins",
+    jenkins_url: str = "http://localhost:8080",
     username: str = "admin",
     password: str = "admin"
 ):
@@ -834,7 +833,7 @@ async def test_jenkins_connection(
 @app.get("/migration/jenkins/jobs")
 @app.get("/dev/migration/jenkins/jobs")
 async def list_jenkins_jobs(
-    jenkins_url: str = "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins",
+    jenkins_url: str = "http://localhost:8080",
     username: str = "admin",
     password: str = "admin"
 ):
@@ -842,7 +841,7 @@ async def list_jenkins_jobs(
     List all Jenkins jobs.
 
     Query parameters:
-    - jenkins_url: Jenkins server URL (default: http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins)
+    - jenkins_url: Jenkins server URL (default: http://localhost:8080)
     - username: Jenkins username (default: admin)
     - password: Jenkins password/token (default: admin)
     """
@@ -893,7 +892,7 @@ async def create_jenkins_job(request: CreateJobRequest):
 @app.get("/dev/migration/jenkins/jobs/{job_name}")
 async def get_jenkins_job_details(
     job_name: str,
-    jenkins_url: str = "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins",
+    jenkins_url: str = "http://localhost:8080",
     username: str = "admin",
     password: str = "admin"
 ):
@@ -965,33 +964,16 @@ async def migrate_jenkins_job(request: MigrateJobRequest):
                 detail=migration_result.get('error', 'Migration failed')
             )
 
-        # Step 3: Get GitHub token (from request, env var, or Secrets Manager)
+        # Step 3: Get GitHub token (from request or env var)
         github_token = request.github_token
         if not github_token or github_token.strip() == "":
-            local_mode = os.getenv('LOCAL_MODE', 'false').lower() == 'true'
-            if local_mode:
-                # Cloud-agnostic: read from environment variable
-                github_token = os.getenv('GITHUB_TOKEN', '')
-                if not github_token:
-                    raise HTTPException(
-                        status_code=500,
-                        detail="GitHub token not provided and GITHUB_TOKEN env var not set"
-                    )
-                migration_agent.logger.info("Loaded GitHub token from environment variable")
-            else:
-                migration_agent.logger.info("GitHub token not provided, loading from Secrets Manager")
-                try:
-                    secrets_client = boto3.client('secretsmanager', region_name='us-east-1')
-                    secret_value = secrets_client.get_secret_value(SecretId='dev-github-credentials')
-                    secret_data = json.loads(secret_value['SecretString'])
-                    github_token = secret_data.get('token', '')
-                    migration_agent.logger.info("Successfully loaded GitHub token from Secrets Manager")
-                except Exception as e:
-                    migration_agent.logger.error(f"Failed to load GitHub token from Secrets Manager: {e}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"GitHub token not provided and failed to load from Secrets Manager: {str(e)}"
-                    )
+            github_token = os.getenv('GITHUB_TOKEN', '')
+            if not github_token:
+                raise HTTPException(
+                    status_code=500,
+                    detail="GitHub token not provided and GITHUB_TOKEN env var not set"
+                )
+            migration_agent.logger.info("Loaded GitHub token from environment variable")
 
         # Step 4: Connect to GitHub
         github_client = GitHubClient(github_token)
@@ -1075,7 +1057,7 @@ async def test_github_connection(token: str):
 @app.get("/migration/integration/test")
 @app.get("/dev/migration/integration/test")
 async def test_full_integration(
-    jenkins_url: str = "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins",
+    jenkins_url: str = "http://localhost:8080",
     jenkins_username: str = "admin",
     jenkins_password: str = "admin",
     github_token: Optional[str] = None

@@ -139,20 +139,14 @@ All agents inherit from `BaseAgent` (`backend/agents/common/agent_base.py`) whic
 └──────────────────────────────────────────┘
 ```
 
-### LOCAL_MODE Conditional Logic
+### Storage Initialization
 
 ```python
-# In agent_base.py - boto3 is NEVER imported in local mode
-LOCAL_MODE = os.getenv('LOCAL_MODE', 'false').lower() == 'true'
-
-if LOCAL_MODE:
-    from common.local_storage import (
-        LocalDynamoDBResource, LocalS3Client,
-        LocalEventsClient, LocalSecretsClient
-    )
-else:
-    import boto3
-    from botocore.exceptions import ClientError
+# In agent_base.py - local storage backends, no cloud dependencies
+from common.local_storage import (
+    LocalDynamoDBResource, LocalS3Client,
+    LocalEventsClient, LocalSecretsClient
+)
 ```
 
 ### Agent Catalog
@@ -184,12 +178,12 @@ else:
 - Converts Jenkins pipelines to GitHub Actions
 - LLM-powered parsing and generation
 - Integrates with Jenkins servers and GitHub
-- **Modified for local mode**: Reads GitHub token from env var instead of Secrets Manager
+- Reads GitHub token from `GITHUB_TOKEN` environment variable
 
 #### 6. MCP GitHub Server (port 8100)
 - Model Context Protocol server for GitHub operations
 - Centralized GitHub credential management
-- **Modified for local mode**: Reads GitHub credentials from env vars
+- Reads GitHub credentials from environment variables
 
 ---
 
@@ -398,13 +392,13 @@ POST /generate
 ### Migration
 
 ```
-POST /migration/migrate
+POST /migrate
 {
   "jenkinsfile_content": "pipeline { ... }",
   "project_name": "my-service"
 }
 
-POST /migration/analyze
+POST /analyze
 GET  /migration/jenkins/jobs
 POST /migration/jenkins/migrate-job
 ```

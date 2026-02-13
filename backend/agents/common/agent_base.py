@@ -15,21 +15,15 @@ from typing import Dict, Any, Optional, List
 import anthropic
 from github import Github
 
-# LOCAL_MODE: replace AWS services with local implementations
-LOCAL_MODE = os.getenv('LOCAL_MODE', 'false').lower() == 'true'
+# Local storage implementations (no cloud dependencies)
+from common.local_storage import (
+    LocalDynamoDBResource, LocalS3Client,
+    LocalEventsClient, LocalSecretsClient
+)
 
-if LOCAL_MODE:
-    from common.local_storage import (
-        LocalDynamoDBResource, LocalS3Client,
-        LocalEventsClient, LocalSecretsClient
-    )
-
-    class ClientError(Exception):
-        """Placeholder for botocore.exceptions.ClientError when boto3 is not used."""
-        pass
-else:
-    import boto3
-    from botocore.exceptions import ClientError
+class ClientError(Exception):
+    """Placeholder for botocore.exceptions.ClientError."""
+    pass
 
 
 class BaseAgent(ABC):
@@ -37,7 +31,7 @@ class BaseAgent(ABC):
     Base class for all agents providing common functionality.
 
     Features:
-    - AWS SDK integrations (S3, DynamoDB, EventBridge, Secrets Manager)
+    - Local storage backends (JSON files, filesystem, env vars)
     - Claude AI API client
     - Structured logging
     - Event-driven task processing
@@ -56,18 +50,12 @@ class BaseAgent(ABC):
         # Setup logging
         self.logger = self._setup_logging()
 
-        # Service clients (AWS or local depending on LOCAL_MODE)
-        if LOCAL_MODE:
-            self.s3_client = LocalS3Client()
-            self.dynamodb = LocalDynamoDBResource()
-            self.events_client = LocalEventsClient()
-            self.secrets_client = LocalSecretsClient()
-            self.logger.info("Running in LOCAL_MODE - using local storage backends")
-        else:
-            self.s3_client = boto3.client('s3')
-            self.dynamodb = boto3.resource('dynamodb')
-            self.events_client = boto3.client('events')
-            self.secrets_client = boto3.client('secretsmanager')
+        # Service clients (local storage backends)
+        self.s3_client = LocalS3Client()
+        self.dynamodb = LocalDynamoDBResource()
+        self.events_client = LocalEventsClient()
+        self.secrets_client = LocalSecretsClient()
+        self.logger.info("Using local storage backends")
 
         # DynamoDB table references (initialized from environment variables)
         self.workflows_table = self._init_dynamodb_table('WORKFLOWS_TABLE_NAME', 'workflows')
@@ -149,7 +137,7 @@ class BaseAgent(ABC):
 
     async def get_secret(self, secret_name: str) -> Dict[str, Any]:
         """
-        Retrieve secret from AWS Secrets Manager.
+        Retrieve secret from local secrets store (environment variables).
 
         Args:
             secret_name: Name of the secret

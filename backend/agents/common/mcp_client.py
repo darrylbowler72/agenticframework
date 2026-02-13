@@ -88,11 +88,9 @@ class GitHubMCPClient:
                            or defaults to internal ECS service name.
         """
         if mcp_server_url is None:
-            # Default to internal ECS service
-            environment = os.getenv('ENVIRONMENT', 'dev')
             mcp_server_url = os.getenv(
                 'MCP_GITHUB_URL',
-                f'http://{environment}-mcp-github:8100'
+                'http://mcp-github:8100'
             )
 
         self.mcp = MCPClient(mcp_server_url)

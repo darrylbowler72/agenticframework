@@ -70,7 +70,7 @@ curl -X POST http://localhost:8001/generate \
 
 #### Migrate Jenkins Pipeline
 ```bash
-curl -X POST http://localhost:8004/migration/migrate \
+curl -X POST http://localhost:8004/migrate \
   -H "Content-Type: application/json" \
   -d '{
     "jenkinsfile_content": "pipeline { agent any stages { stage(Build) { steps { sh \"mvn clean install\" } } } }",
