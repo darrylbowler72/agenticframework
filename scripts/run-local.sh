@@ -57,6 +57,12 @@ validate_env() {
         exit 1
     fi
 
+    # Fix Windows CRLF line endings (prevents \r in env var values)
+    if file "$ENV_FILE" | grep -q CRLF; then
+        sed -i 's/\r$//' "$ENV_FILE"
+        echo "Fixed Windows line endings in .env file"
+    fi
+
     # Check required keys are set (not placeholder values)
     local missing=0
     while IFS='=' read -r key value; do
