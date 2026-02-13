@@ -1,0 +1,106 @@
+name: Pull Request Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install black ruff mypy
+
+      - name: Check formatting with Black
+        run: |
+          cd backend
+          black --check --diff .
+
+      - name: Lint with Ruff
+        run: |
+          cd backend
+          ruff check --output-format=github .
+
+      - name: Type check with MyPy
+        run: |
+          cd backend
+          mypy . --ignore-missing-imports
+
+  test-coverage:
+    name: Test Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio
+
+      - name: Run tests with coverage
+        run: |
+          cd backend
+          pytest --cov=. --cov-report=term --cov-report=html
+
+      - name: Check coverage threshold
+        run: |
+          cd backend
+          coverage report --fail-under=70
+
+  security-checks:
+    name: Security Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Bandit security check
+        run: |
+          pip install bandit
+          bandit -r backend/ -f json -o bandit-report.json || true
+
+      - name: Check Python dependencies for vulnerabilities
+        run: |
+          pip install safety
+          safety check --file backend/requirements.txt || true
+
+  docker-build-test:
+    name: Test Docker Builds
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        agent: [planner, codegen, remediation]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -f backend/Dockerfile.${{ matrix.agent }} -t ${{ matrix.agent }}-agent:test backend/
+
+      - name: Test Docker image
+        run: |
+          docker run --rm ${{ matrix.agent }}-agent:test python -c "import sys; print(sys.version)"

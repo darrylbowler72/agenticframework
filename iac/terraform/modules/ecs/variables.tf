@@ -56,5 +56,5 @@ variable "migration_image_version" {
 variable "jenkins_image_version" {
   description = "Docker image version for Jenkins"
   type        = string
-  default     = "1.0.0"
+  default     = "1.0.1"
 }

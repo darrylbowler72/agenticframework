@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevOps at Your Service</title>
+    <link rel="stylesheet" href="/dev/static/style.css">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <div class="header-content">
+                <h1>🤖 DevOps at Your Service</h1>
+                <p>Your AI-powered DevOps assistant</p>
+            </div>
+            <div class="header-actions">
+                <button class="status-btn" onclick="toggleAgentStatus()" title="View agent status">
+                    <span class="status-indicator" id="overallStatus">●</span>
+                </button>
+                <button class="new-chat-btn" onclick="newChat()">New Chat</button>
+            </div>
+        </div>
+
+        <div class="agent-status-panel" id="agentStatusPanel" style="display: none;">
+            <div class="status-header">
+                <h3>Agent Health Status</h3>
+                <button class="close-btn" onclick="toggleAgentStatus()">×</button>
+            </div>
+            <div class="status-grid" id="agentStatusGrid">
+                <div class="status-loading">Loading agent status...</div>
+            </div>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="welcome-message">
+                <h2>👋 Welcome!</h2>
+                <p>I'm your DevOps assistant. I can help you with:</p>
+                <ul>
+                    <li>📋 <strong>Create Workflows</strong> - Plan and organize your DevOps tasks</li>
+                    <li>💻 <strong>Generate Code</strong> - Create microservices, infrastructure, and pipelines</li>
+                    <li>🔧 <strong>Fix Issues</strong> - Remediate CI/CD pipeline failures</li>
+                    <li>🔄 <strong>Migrate Pipelines</strong> - Convert Jenkins pipelines to GitHub Actions</li>
+                    <li>💡 <strong>Get Help</strong> - Ask questions about DevOps best practices</li>
+                </ul>
+                <p class="try-asking">Try asking: "Create a new Python microservice" or "Migrate my Jenkins pipeline to GitHub Actions"</p>
+            </div>
+        </div>
+
+        <div class="chat-input-container">
+            <div class="input-wrapper">
+                <textarea
+                    id="userInput"
+                    placeholder="Type your message here..."
+                    rows="1"
+                    onkeydown="handleKeyPress(event)"
+                ></textarea>
+                <button id="sendBtn" onclick="sendMessage()">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path d="M2 10L18 2L10 18L8 11L2 10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="typing-indicator" id="typingIndicator" style="display: none;">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    </div>
+
+    <script src="/dev/static/script.js"></script>
+</body>
+</html>

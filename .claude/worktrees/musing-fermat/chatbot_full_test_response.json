@@ -1,0 +1,16 @@
+{
+  "session_id": "test-session-full-1765231429",
+  "message": "Okay, I can help you with that. First, I'll create a new public repository called 'test-my-app123' for your Python web application. Then, I'll set up the standard gitflow branching structure within that repository, including the 'develop', 'feature/*', 'release/*', and 'hotfix/*' branches. Once that's done, I can generate a sample Python web application for you to use as a starting point. Does this sound good? Let me know if you need any clarification or have additional requirements.\n\n✅ Repository created successfully!\n- Name: darrylbowler72/test-my-app123\n- URL: https://github.com/darrylbowler72/test-my-app123\n- Private: False",
+  "agent_action": "github",
+  "action_result": {
+    "success": true,
+    "repository": {
+      "name": "test-my-app123",
+      "full_name": "darrylbowler72/test-my-app123",
+      "url": "https://github.com/darrylbowler72/test-my-app123",
+      "description": "Sample Python web application",
+      "private": false,
+      "default_branch": "main"
+    }
+  }
+}

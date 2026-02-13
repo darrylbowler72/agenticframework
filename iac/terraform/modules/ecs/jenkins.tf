@@ -1,5 +1,73 @@
 # Jenkins ECS Task Definition and Service
 
+# EFS File System for Jenkins persistent storage
+resource "aws_efs_file_system" "jenkins" {
+  creation_token = "${var.environment}-jenkins-efs"
+  encrypted      = true
+
+  tags = {
+    Name = "${var.environment}-jenkins-efs"
+  }
+}
+
+# EFS Access Point for Jenkins with proper permissions
+resource "aws_efs_access_point" "jenkins" {
+  file_system_id = aws_efs_file_system.jenkins.id
+
+  posix_user {
+    uid = 1000
+    gid = 1000
+  }
+
+  root_directory {
+    path = "/jenkins_home"
+    creation_info {
+      owner_uid   = 1000
+      owner_gid   = 1000
+      permissions = "755"
+    }
+  }
+
+  tags = {
+    Name = "${var.environment}-jenkins-access-point"
+  }
+}
+
+# EFS Mount Targets (one per private subnet)
+resource "aws_efs_mount_target" "jenkins" {
+  count           = length(var.private_subnet_ids)
+  file_system_id  = aws_efs_file_system.jenkins.id
+  subnet_id       = var.private_subnet_ids[count.index]
+  security_groups = [aws_security_group.jenkins_efs.id]
+}
+
+# Security Group for EFS
+resource "aws_security_group" "jenkins_efs" {
+  name        = "${var.environment}-jenkins-efs-sg"
+  description = "Security group for Jenkins EFS mount targets"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "Allow NFS from VPC"
+    from_port   = 2049
+    to_port     = 2049
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.environment}-jenkins-efs-sg"
+  }
+}
+
 # Jenkins Task Definition
 resource "aws_ecs_task_definition" "jenkins" {
   family                   = "${var.environment}-jenkins"
@@ -10,6 +78,19 @@ resource "aws_ecs_task_definition" "jenkins" {
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
+  volume {
+    name = "jenkins-home"
+
+    efs_volume_configuration {
+      file_system_id          = aws_efs_file_system.jenkins.id
+      transit_encryption      = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.jenkins.id
+        iam             = "ENABLED"
+      }
+    }
+  }
+
   container_definitions = jsonencode([{
     name      = "jenkins"
     image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/jenkins-custom:${var.jenkins_image_version}"
@@ -19,6 +100,12 @@ resource "aws_ecs_task_definition" "jenkins" {
       containerPort = 8080
       hostPort      = 8080
       protocol      = "tcp"
+    }]
+
+    mountPoints = [{
+      sourceVolume  = "jenkins-home"
+      containerPath = "/var/jenkins_home"
+      readOnly      = false
     }]
 
     environment = [

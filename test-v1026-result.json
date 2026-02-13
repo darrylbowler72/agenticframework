@@ -1,0 +1,36 @@
+{
+    "success": true,
+    "jenkins_job": {
+        "name": "petclinic-pipeline",
+        "url": "http://jenkins:8080/jenkins/job/petclinic-pipeline/"
+    },
+    "github_repository": {
+        "name": "petclinic-pipeline",
+        "url": "https://github.com/darrylbowler72/petclinic-pipeline",
+        "created": false
+    },
+    "github_workflow": {
+        "name": "petclinic-pipeline.yml",
+        "path": ".github/workflows/petclinic-pipeline.yml",
+        "url": "https://github.com/darrylbowler72/petclinic-pipeline/blob/main/.github/workflows/petclinic-pipeline.yml",
+        "created": false
+    },
+    "migration_report": {
+        "source_type": "Jenkins",
+        "target_type": "GitHub Actions",
+        "pipeline_type": "declarative",
+        "stages_converted": 4,
+        "environment_variables": 0,
+        "triggers_converted": 0,
+        "timestamp": "2025-12-10T14:42:02.392857"
+    },
+    "warnings": [
+        "No triggers found in Jenkinsfile. Default push trigger added."
+    ],
+    "next_steps": [
+        "1. Review the workflow at: https://github.com/darrylbowler72/petclinic-pipeline/blob/main/.github/workflows/petclinic-pipeline.yml",
+        "2. Configure repository secrets if needed",
+        "3. Push code to trigger the workflow",
+        "4. Monitor workflow runs at: https://github.com/darrylbowler72/petclinic-pipeline/actions"
+    ]
+}

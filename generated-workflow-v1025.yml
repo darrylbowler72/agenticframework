@@ -1,0 +1,102 @@
+name: petclinic-pipeline CI/CD
+'on':
+  push:
+    branches:
+    - main
+    - develop
+env: {}
+jobs:
+  checkout:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        repository: spring-projects/spring-petclinic
+        ref: main
+    - name: Checking out Spring PetClinic from GitHub...
+      run: echo "Checking out Spring PetClinic from GitHub..."
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        repository: spring-projects/spring-petclinic
+        ref: main
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: temurin
+        cache: maven
+    - name: Make Maven wrapper executable
+      run: chmod +x mvnw
+    - name: 'Build: chmod +x mvnw'
+      run: chmod +x mvnw
+    - name: 'Build: ./mvnw clean compile'
+      run: ./mvnw clean compile
+    - name: 'Build: mvnw.cmd clean compile'
+      run: mvnw.cmd clean compile
+    - name: Building Spring PetClinic...
+      run: echo "Building Spring PetClinic..."
+    - name: Upload JAR artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: application-jar
+        path: target/*.jar
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        repository: spring-projects/spring-petclinic
+        ref: main
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: temurin
+        cache: maven
+    - name: Make Maven wrapper executable
+      run: chmod +x mvnw
+    - name: 'Test: ./mvnw test'
+      run: ./mvnw test
+    - name: 'Test: mvnw.cmd test'
+      run: mvnw.cmd test
+    - name: Running tests...
+      run: echo "Running tests..."
+  package:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        repository: spring-projects/spring-petclinic
+        ref: main
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: temurin
+        cache: maven
+    - name: Make Maven wrapper executable
+      run: chmod +x mvnw
+    - name: 'Package: ./mvnw package -DskipTests'
+      run: ./mvnw package -DskipTests
+    - name: 'Package: mvnw.cmd package -DskipTests'
+      run: mvnw.cmd package -DskipTests
+    - name: Packaging application...
+      run: echo "Packaging application..."
+    - name: Build completed successfully!
+      run: echo "Build completed successfully!"
+    - name: Build failed!
+      run: echo "Build failed!"
+    - name: Cleaning up workspace...
+      run: echo "Cleaning up workspace..."
+    - name: Upload JAR artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: application-jar
+        path: target/*.jar

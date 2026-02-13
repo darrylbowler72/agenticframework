@@ -1,0 +1,7 @@
+{
+  "jenkins_url": "http://54.87.173.145:8080",
+  "jenkins_username": "admin",
+  "jenkins_password": "admin",
+  "job_name": "sample-pipeline",
+  "config_xml": "<?xml version='1.1' encoding='UTF-8'?>\n<flow-definition plugin=\"workflow-job@2.40\">\n  <description>Sample pipeline for testing Jenkins-GitHub migration</description>\n  <keepDependencies>false</keepDependencies>\n  <properties/>\n  <definition class=\"org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition\" plugin=\"workflow-cps@2.87\">\n    <script>pipeline {\n    agent any\n\n    stages {\n        stage('Build') {\n            steps {\n                echo 'Building application...'\n                sh 'echo \"Compiling source code\"'\n            }\n        }\n\n        stage('Test') {\n            steps {\n                echo 'Running tests...'\n                sh 'echo \"Running unit tests\"'\n                sh 'echo \"Running integration tests\"'\n            }\n        }\n\n        stage('Deploy') {\n            steps {\n                echo 'Deploying application...'\n                sh 'echo \"Deploying to staging environment\"'\n            }\n        }\n    }\n\n    post {\n        success {\n            echo 'Pipeline completed successfully!'\n        }\n        failure {\n            echo 'Pipeline failed!'\n        }\n    }\n}</script>\n    <sandbox>true</sandbox>\n  </definition>\n  <triggers/>\n  <disabled>false</disabled>\n</flow-definition>"
+}

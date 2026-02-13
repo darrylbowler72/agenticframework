@@ -1,0 +1,4 @@
+{
+  "session_id": "test-jenkins-migration",
+  "message": "migrate jenkins job \"petclinic-pipeline\" to github"
+}

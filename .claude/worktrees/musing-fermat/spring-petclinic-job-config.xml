@@ -1,0 +1,79 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job">
+  <description>Build Spring PetClinic application from GitHub</description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
+    <script>pipeline {
+    agent any
+
+    stages {
+        stage(&apos;Checkout&apos;) {
+            steps {
+                script {
+                    echo &apos;Checking out Spring PetClinic from GitHub...&apos;
+                    git branch: &apos;main&apos;,
+                        url: &apos;https://github.com/spring-projects/spring-petclinic.git&apos;
+                }
+            }
+        }
+
+        stage(&apos;Build&apos;) {
+            steps {
+                script {
+                    echo &apos;Building Spring PetClinic...&apos;
+                    if (isUnix()) {
+                        sh &apos;chmod +x mvnw&apos;
+                        sh &apos;./mvnw clean compile&apos;
+                    } else {
+                        bat &apos;mvnw.cmd clean compile&apos;
+                    }
+                }
+            }
+        }
+
+        stage(&apos;Test&apos;) {
+            steps {
+                script {
+                    echo &apos;Running tests...&apos;
+                    if (isUnix()) {
+                        sh &apos;./mvnw test&apos;
+                    } else {
+                        bat &apos;mvnw.cmd test&apos;
+                    }
+                }
+            }
+        }
+
+        stage(&apos;Package&apos;) {
+            steps {
+                script {
+                    echo &apos;Packaging application...&apos;
+                    if (isUnix()) {
+                        sh &apos;./mvnw package -DskipTests&apos;
+                    } else {
+                        bat &apos;mvnw.cmd package -DskipTests&apos;
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo &apos;Build completed successfully!&apos;
+            archiveArtifacts artifacts: &apos;target/*.jar&apos;, allowEmptyArchive: true
+        }
+        failure {
+            echo &apos;Build failed!&apos;
+        }
+        always {
+            echo &apos;Cleaning up workspace...&apos;
+        }
+    }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

@@ -1,0 +1,4 @@
+{
+  "session_id": "test-jenkins-integration",
+  "message": "list all jenkins jobs from http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins with username admin and password admin"
+}
