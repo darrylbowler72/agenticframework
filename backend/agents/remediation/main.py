@@ -19,6 +19,7 @@ sys.path.append('../..')
 from common.agent_base import BaseAgent
 from common.version import __version__
 from common.mcp_client import GitHubMCPClient
+from common.graphs import build_remediation_graph
 
 
 app = FastAPI(
@@ -45,7 +46,8 @@ class RemediationAgent(BaseAgent):
         self.playbooks_table = None
         self.actions_table = None
         self._initialize_tables()
-        self.logger.info("Remediation Agent initialized")
+        self.graph = build_remediation_graph(self)
+        self.logger.info("Remediation Agent initialized with LangGraph workflow")
 
     def _initialize_tables(self):
         """Initialize DynamoDB tables."""
@@ -74,6 +76,8 @@ class RemediationAgent(BaseAgent):
         """
         Main remediation workflow.
 
+        Uses LangGraph to orchestrate: fetch_logs -> analyze -> find_playbook -> [execute with retry] -> notify
+
         Args:
             event_data: Pipeline failure event data
 
@@ -87,35 +91,19 @@ class RemediationAgent(BaseAgent):
 
         await self._initialize_github()
 
-        # Fetch pipeline logs
-        logs = await self._fetch_pipeline_logs(pipeline_id, project_id)
+        result = await self.graph.ainvoke({
+            "pipeline_id": pipeline_id,
+            "project_id": project_id,
+            "event_data": event_data,
+            "retry_count": 0,
+        })
 
-        # AI-powered root cause analysis
-        analysis = await self._analyze_failure(logs, event_data)
-
-        # Find matching playbook
-        playbook = await self._find_playbook(
-            category=analysis['category'],
-            failure_pattern=analysis.get('failure_pattern', '')
-        )
-
-        # Execute remediation if applicable
-        if playbook and playbook.get('auto_fix_enabled') and analysis['risk_level'] == 'low':
-            result = await self._execute_playbook(playbook, analysis, pipeline_id, project_id)
-        else:
-            result = {
-                'outcome': 'manual_intervention_required',
-                'reason': 'High risk or no matching playbook',
-                'analysis': analysis
-            }
-
-        # Store remediation action
-        await self._store_action(pipeline_id, project_id, analysis, result)
-
-        # Notify developer
-        await self._notify_developer(result, analysis)
-
-        return result
+        return {
+            'outcome': result.get('outcome', 'unknown'),
+            'notification_sent': result.get('notification_sent', False),
+            'analysis': result.get('analysis', {}),
+            'execution_result': result.get('execution_result', {}),
+        }
 
     async def _fetch_pipeline_logs(self, pipeline_id: int, project_id: str) -> str:
         """

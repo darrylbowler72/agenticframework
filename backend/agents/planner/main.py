@@ -16,6 +16,7 @@ sys.path.append('../..')
 
 from common.agent_base import BaseAgent
 from common.version import __version__
+from common.graphs import build_planner_graph
 from common.schemas.workflow import (
     WorkflowRequest,
     WorkflowResponse,
@@ -47,7 +48,8 @@ class PlannerAgent(BaseAgent):
 
     def __init__(self):
         super().__init__(agent_name="planner")
-        self.logger.info("Planner Agent initialized")
+        self.graph = build_planner_graph(self)
+        self.logger.info("Planner Agent initialized with LangGraph workflow")
 
     async def process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Process a planning task."""
@@ -58,6 +60,8 @@ class PlannerAgent(BaseAgent):
         """
         Create a new workflow by decomposing the request into tasks.
 
+        Uses LangGraph to orchestrate: plan_tasks -> store_workflow -> dispatch_tasks
+
         Args:
             request_data: Workflow request data
 
@@ -67,36 +71,19 @@ class PlannerAgent(BaseAgent):
         workflow_id = f"wf-{uuid.uuid4().hex[:12]}"
         self.logger.info(f"Creating workflow {workflow_id} for template: {request_data.get('template')}")
 
-        # Use Claude to analyze request and create execution plan
-        tasks = await self._plan_tasks(
-            template=request_data['template'],
-            parameters=request_data['parameters']
-        )
+        result = await self.graph.ainvoke({
+            "template": request_data["template"],
+            "parameters": request_data["parameters"],
+            "requested_by": request_data.get("requested_by", "unknown"),
+            "workflow_id": workflow_id,
+        })
 
-        # Store workflow in DynamoDB
-        await self._store_workflow(
-            workflow_id=workflow_id,
-            request_data=request_data,
-            tasks=tasks
-        )
-
-        # Publish task.created events for each task
-        for task in tasks:
-            await self.publish_event(
-                detail_type='task.created',
-                detail={
-                    'workflow_id': workflow_id,
-                    'task_id': task['task_id'],
-                    'agent': task['agent'],
-                    'input_params': task['input_params']
-                }
-            )
-
+        tasks = result.get("tasks", [])
         self.logger.info(f"Workflow {workflow_id} created with {len(tasks)} tasks")
 
         return {
             'workflow_id': workflow_id,
-            'status': 'in_progress',
+            'status': result.get('status', 'in_progress'),
             'tasks': tasks
         }
 

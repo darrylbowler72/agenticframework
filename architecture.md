@@ -187,6 +187,127 @@ from common.local_storage import (
 
 ---
 
+## LangGraph Integration
+
+### Overview
+
+All 5 agents use [LangGraph](https://github.com/langchain-ai/langgraph) StateGraph instances to define their workflows as explicit directed graphs. Each agent builds a compiled graph at initialization and invokes it per request via `await self.graph.ainvoke(state)`.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    Agent Container                   │
+│                                                     │
+│  ┌───────────────────────────────────────────────┐  │
+│  │              FastAPI Application               │  │
+│  └──────────────────┬────────────────────────────┘  │
+│                     │                               │
+│                     ▼                               │
+│  ┌───────────────────────────────────────────────┐  │
+│  │       LangGraph Compiled StateGraph           │  │
+│  │   ┌────────┐   ┌────────┐   ┌────────┐       │  │
+│  │   │ Node A │──>│ Node B │──>│ Node C │──>END  │  │
+│  │   └────────┘   └───┬────┘   └────────┘       │  │
+│  │                    │ (conditional)             │  │
+│  │                    ▼                           │  │
+│  │              ┌────────┐                        │  │
+│  │              │Fallback│──>...                  │  │
+│  │              └────────┘                        │  │
+│  └──────────────────┬────────────────────────────┘  │
+│                     │                               │
+│                     ▼                               │
+│  ┌───────────────────────────────────────────────┐  │
+│  │     BaseAgent (Claude AI, Storage, GitHub)     │  │
+│  └───────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+```
+
+### State Classes (`graph_states.py`)
+
+| State Class | Agent | Key Fields |
+|-------------|-------|------------|
+| `WorkflowState` | Planner | template, parameters, tasks, status |
+| `CodeGenState` | CodeGen | service_name, language, files, repo_url |
+| `RemediationState` | Remediation | pipeline_id, logs, analysis, playbook, retry_count |
+| `MigrationState` | Migration | jenkinsfile_content, pipeline_data, workflow_yaml, cleaned_yaml |
+| `ChatState` | Chatbot | user_message, intent, action_result, final_response |
+
+### Agent Graphs (`graphs.py`)
+
+#### Planner Agent
+```
+plan_tasks ──(success)──> store_workflow -> dispatch_tasks -> END
+    |
+(failure)
+    v
+fallback_plan -> store_workflow -> dispatch_tasks -> END
+```
+
+#### CodeGen Agent
+```
+init_github -> generate_templates -> enhance_with_ai -> store_artifacts -> push_to_repo -> generate_readme -> END
+```
+
+#### Remediation Agent (with retry loop)
+```
+fetch_logs -> analyze_failure -> find_playbook
+                                      |
+                    (auto-fixable) ---+--- (manual) -> store_and_notify -> END
+                         |
+                    execute_playbook ──(success)──> store_and_notify -> END
+                         |           |
+                    (fail,retry<3)   (fail,retry>=3) -> store_and_notify -> END
+                         |
+                         └──> execute_playbook (retry)
+```
+
+#### Migration Agent (dual fallback)
+```
+parse_with_llm ──(success)──> generate_with_llm ──(success)──> cleanup_platform -> build_report -> END
+      |                              |
+  (failure)                      (failure)
+      v                              v
+parse_with_regex              generate_with_template -> cleanup_platform -> build_report -> END
+```
+
+#### Chatbot Agent
+```
+analyze_intent ──(action_needed)──> execute_action -> compose_response -> END
+      |
+  (no action)
+      v
+compose_response -> END
+```
+
+### How Graphs Compose
+
+Graph nodes are thin wrappers that call existing agent methods. The agent instance is passed to the graph builder factory function:
+
+```python
+# In graphs.py
+def build_planner_graph(agent):
+    async def plan_tasks(state):
+        tasks = await agent._plan_tasks(state["template"], state["parameters"])
+        return {"tasks": tasks, "status": "planned"}
+    ...
+    graph = StateGraph(WorkflowState)
+    graph.add_node("plan_tasks", plan_tasks)
+    ...
+    return graph.compile()
+
+# In planner/main.py
+class PlannerAgent(BaseAgent):
+    def __init__(self):
+        super().__init__(agent_name="planner")
+        self.graph = build_planner_graph(self)
+
+    async def create_workflow(self, request_data):
+        result = await self.graph.ainvoke({...})
+```
+
+---
+
 ## Data Flow & Orchestration
 
 ### Request Flow (Local)
@@ -434,6 +555,8 @@ GET /health
   /common/                # Shared utilities
     agent_base.py          # BaseAgent class (LOCAL_MODE logic)
     local_storage.py       # Local replacements for AWS services
+    graph_states.py        # LangGraph TypedDict state classes
+    graphs.py              # LangGraph graph builder functions
     version.py             # Version management
 /backend/mcp-server/
   /github/                # MCP GitHub server
@@ -474,10 +597,12 @@ python -m uvicorn agents.chatbot.main:app --host 0.0.0.0 --port 8003 --reload
 
 1. Create `backend/agents/<name>/main.py` extending `BaseAgent`
 2. Implement `process_task()` method
-3. Add FastAPI routes and health check at `/health`
-4. Create `backend/Dockerfile.<name>`
-5. Add service to `docker-compose.local.yml`
-6. Update chatbot agent endpoints if the new agent should be accessible via chat
+3. Define a state class in `graph_states.py` and a graph builder in `graphs.py`
+4. Build the compiled graph in `__init__()` and invoke via `self.graph.ainvoke(state)` per request
+5. Add FastAPI routes and health check at `/health`
+6. Create `backend/Dockerfile.<name>`
+7. Add service to `docker-compose.local.yml`
+8. Update chatbot agent endpoints if the new agent should be accessible via chat
 
 ### Container Build Context
 

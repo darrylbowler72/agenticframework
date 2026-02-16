@@ -116,6 +116,30 @@ User Browser → Chatbot (:8003) → Claude AI (intent analysis)
 
 All services run as containers on a shared bridge network (`agentic-local`). Agents discover each other via container DNS names.
 
+### LangGraph Orchestration
+
+Each agent uses [LangGraph](https://github.com/langchain-ai/langgraph) to define its workflow as an explicit state graph. This replaces imperative control flow with declarative graph-based orchestration featuring conditional routing and automatic fallbacks.
+
+```
+Example: Migration Agent Graph
+
+parse_with_llm ──(success)──> generate_with_llm ──(success)──> cleanup_platform -> build_report -> END
+      |                              |
+  (failure)                      (failure)
+      v                              v
+parse_with_regex              generate_with_template -> cleanup_platform -> ...
+```
+
+Key benefits:
+- **Explicit control flow** - Agent workflows are visible as graph definitions
+- **Automatic fallbacks** - LLM failures route to deterministic alternatives
+- **Retry cycles** - Remediation agent retries playbook execution up to 3 times
+- **Typed state** - Each graph uses TypedDict state classes for type safety
+
+Graph definitions live in:
+- `backend/agents/common/graph_states.py` - State type definitions
+- `backend/agents/common/graphs.py` - Graph builder functions
+
 ### LOCAL_MODE
 
 When `LOCAL_MODE=true`, cloud services are replaced with local implementations:
@@ -158,7 +182,7 @@ This provides a single point for GitHub credential management and a standardized
   /remediation/           # Auto-remediation
   /chatbot/               # Conversational interface (+ web UI)
   /migration/             # Jenkins to GitHub Actions migration
-  /common/                # Shared utilities (BaseAgent, local_storage)
+  /common/                # Shared utilities (BaseAgent, local_storage, LangGraph)
 /backend/mcp-server/
   /github/                # MCP GitHub server
 /backend/Dockerfile.*     # One Dockerfile per service

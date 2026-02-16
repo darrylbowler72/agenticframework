@@ -21,6 +21,7 @@ sys.path.append('../..')
 
 from common.agent_base import BaseAgent
 from common.version import __version__
+from common.graphs import build_codegen_graph
 from common.schemas.workflow import ServiceScaffoldRequest
 from common.mcp_client import GitHubMCPClient
 
@@ -56,7 +57,8 @@ class CodeGenAgent(BaseAgent):
             autoescape=select_autoescape(['html', 'xml'])
         )
 
-        self.logger.info("CodeGen Agent initialized")
+        self.graph = build_codegen_graph(self)
+        self.logger.info("CodeGen Agent initialized with LangGraph workflow")
 
     async def _initialize_github(self):
         """Initialize MCP GitHub client."""
@@ -96,6 +98,8 @@ class CodeGenAgent(BaseAgent):
         """
         Generate complete microservice project.
 
+        Uses LangGraph to orchestrate: init_github -> templates -> enhance -> store -> push -> readme
+
         Args:
             service_name: Service name (kebab-case)
             language: Programming language
@@ -108,36 +112,19 @@ class CodeGenAgent(BaseAgent):
         """
         self.logger.info(f"Generating {language} microservice: {service_name}")
 
-        # Initialize GitHub if needed
-        await self._initialize_github()
-
-        # Generate files from templates
-        files = await self._generate_from_templates(
-            service_name=service_name,
-            language=language,
-            database=database,
-            api_type=api_type
-        )
-
-        # Use Claude to enhance generated code
-        files = await self._enhance_with_ai(files, service_name, language)
-
-        # Store artifacts in S3
-        artifact_key = f"codegen/{service_name}/{datetime.utcnow().isoformat()}"
-        await self._store_artifacts(artifact_key, files)
-
-        # Create GitLab repository and push code
-        repo_url = await self._create_and_push_repository(service_name, files)
-
-        # Generate documentation
-        readme = await self._generate_readme(service_name, language, database, api_type)
-        files['README.md'] = readme
+        result = await self.graph.ainvoke({
+            "service_name": service_name,
+            "language": language,
+            "database": database,
+            "api_type": api_type,
+            "environment": environment,
+        })
 
         return {
             'service_name': service_name,
-            'repository_url': repo_url,
-            'artifact_s3_key': artifact_key,
-            'files_generated': len(files),
+            'repository_url': result.get('repo_url', ''),
+            'artifact_s3_key': result.get('artifact_key', ''),
+            'files_generated': result.get('files_generated', 0),
             'language': language,
             'database': database
         }

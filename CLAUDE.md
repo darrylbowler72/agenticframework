@@ -133,9 +133,20 @@ Each agent (`backend/agents/<agent-name>/main.py`):
 1. Extends `BaseAgent`
 2. Implements FastAPI application
 3. Defines Pydantic models for request/response
-4. Implements `process_task()` method for async task processing
-5. Uses Claude AI via `self.anthropic_client`
-6. Exposes `/health` endpoint
+4. Builds a LangGraph compiled graph in `__init__()` via `build_<agent>_graph(self)`
+5. Invokes the graph per request via `await self.graph.ainvoke(state_dict)`
+6. Implements `process_task()` method for async task processing
+7. Uses Claude AI via `self.anthropic_client`
+8. Exposes `/health` endpoint
+
+### LangGraph Orchestration
+
+Agent workflows are defined as LangGraph StateGraph instances:
+- **State classes**: `backend/agents/common/graph_states.py` - TypedDict classes defining the data flowing through each graph
+- **Graph builders**: `backend/agents/common/graphs.py` - Factory functions (`build_planner_graph`, `build_migration_graph`, etc.) that wire agent methods as graph nodes
+- **Entry point**: `await self.graph.ainvoke({...})` replaces imperative method chains
+- **Conditional routing**: Graphs use conditional edges for fallbacks (LLM -> regex, LLM -> template)
+- **Retry cycles**: Remediation graph retries playbook execution up to 3 times
 
 ### Service Discovery
 

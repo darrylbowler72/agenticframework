@@ -19,6 +19,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from common.agent_base import BaseAgent
 from common.version import __version__
+from common.graphs import build_migration_graph
 from migration.jenkins_client import JenkinsClient
 from migration.github_client import GitHubClient
 
@@ -76,6 +77,9 @@ class MigrationAgent(BaseAgent):
             'sonarqube': 'SonarSource/sonarcloud-github-action@master',
             'slack': 'slackapi/slack-github-action@v1',
         }
+
+        self.graph = build_migration_graph(self)
+        self.logger.info("Migration Agent initialized with LangGraph workflow")
 
     async def process_task(self, task_data: Dict) -> Dict:
         """Process migration task."""
@@ -647,68 +651,34 @@ Return ONLY the complete workflow YAML, starting with 'name:'. Do not include ma
         return step
 
     async def migrate_pipeline(self, jenkinsfile: str, project_name: str, use_llm: bool = True) -> Dict:
-        """Main migration method with LLM capabilities."""
+        """
+        Main migration method with LLM capabilities.
+
+        Uses LangGraph to orchestrate: parse -> generate -> cleanup -> report
+        with automatic fallbacks from LLM to regex/template on failure.
+        """
         try:
-            warnings = []
+            self.logger.info(f"Starting LangGraph migration pipeline for: {project_name}")
 
-            # Parse Jenkinsfile with LLM (falls back to regex if LLM fails)
-            if use_llm:
-                self.logger.info("Using LLM-powered parser for intelligent Jenkinsfile analysis")
-                pipeline_data = await self.parse_jenkinsfile_with_llm(jenkinsfile)
-            else:
-                self.logger.info("Using regex-based parser")
-                pipeline_data = self.parse_jenkinsfile(jenkinsfile)
+            result = await self.graph.ainvoke({
+                "jenkinsfile_content": jenkinsfile,
+                "project_name": project_name,
+                "use_llm": use_llm,
+            })
 
-            if pipeline_data.get('type') == 'unknown':
+            if not result.get("success"):
                 return {
                     'success': False,
-                    'error': 'Unable to parse Jenkinsfile. Supported formats: Declarative and Scripted pipelines'
+                    'error': result.get('error', 'Migration failed')
                 }
-
-            # Generate GitHub Actions workflow with LLM (falls back to template-based if LLM fails)
-            if use_llm:
-                self.logger.info("Using LLM-powered generator for optimized GitHub Actions workflow")
-                workflow_yaml = await self.generate_workflow_with_llm(pipeline_data, project_name)
-
-                # Post-process: Remove platform-mismatched commands
-                runner = pipeline_data.get('agent', 'ubuntu-latest')
-                self.logger.info(f"Applying platform cleanup for runner: {runner}")
-                workflow_yaml = self._clean_platform_commands(workflow_yaml, runner)
-            else:
-                self.logger.info("Using template-based workflow generator")
-                workflow = self.convert_to_github_actions(pipeline_data, project_name)
-                workflow_yaml = yaml.dump(workflow, default_flow_style=False, sort_keys=False)
-
-                # Post-process: Remove platform-mismatched commands
-                runner = pipeline_data.get('agent', 'ubuntu-latest')
-                self.logger.info(f"Applying platform cleanup for runner: {runner}")
-                workflow_yaml = self._clean_platform_commands(workflow_yaml, runner)
-
-            # Generate migration report
-            report = {
-                'source_type': 'Jenkins',
-                'target_type': 'GitHub Actions',
-                'pipeline_type': pipeline_data['type'],
-                'stages_converted': len(pipeline_data['stages']),
-                'environment_variables': len(pipeline_data['environment']),
-                'triggers_converted': len(pipeline_data['triggers']),
-                'timestamp': datetime.utcnow().isoformat()
-            }
-
-            # Add warnings
-            if not pipeline_data['triggers']:
-                warnings.append('No triggers found in Jenkinsfile. Default push trigger added.')
-
-            if pipeline_data['type'] == 'scripted':
-                warnings.append('Scripted pipeline detected. Manual review recommended for complex logic.')
 
             self.logger.info(f"Successfully migrated pipeline: {project_name}")
 
             return {
                 'success': True,
-                'github_workflow': workflow_yaml,
-                'migration_report': report,
-                'warnings': warnings
+                'github_workflow': result.get('cleaned_yaml', result.get('workflow_yaml', '')),
+                'migration_report': result.get('migration_report', {}),
+                'warnings': result.get('warnings', [])
             }
 
         except Exception as e:
