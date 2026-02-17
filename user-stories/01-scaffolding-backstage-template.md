@@ -18,7 +18,7 @@ Application Development Scaffolding
 - [ ] Template form collects required parameters:
   - Service name (with validation for naming conventions)
   - Programming language (Python, Node.js, Go)
-  - Database type (PostgreSQL, DynamoDB, None)
+  - Database type (PostgreSQL, Local JSON, None)
   - API type (REST, gRPC, GraphQL)
   - Target environment (dev, staging, production)
 - [ ] Template triggers Planner Agent via API Gateway endpoint
@@ -30,9 +30,9 @@ Application Development Scaffolding
   - .gitignore with appropriate exclusions
 - [ ] Infrastructure as Code (Terraform) is generated:
   - VPC and networking (if new service)
-  - Database resources (RDS or DynamoDB)
-  - IAM roles and policies
-  - Secrets Manager entries
+  - Database resources (PostgreSQL or local JSON store)
+  - Service configuration
+  - Environment variable definitions
 - [ ] CI/CD pipeline configuration is created:
   - GitLab CI or GitHub Actions workflow
   - Build, test, scan, and deploy stages
@@ -45,7 +45,7 @@ Application Development Scaffolding
 ### Should Have
 - [ ] Template supports advanced options (collapsed by default):
   - Redis cache integration
-  - Message queue (SQS/SNS)
+  - Message queue integration
   - Scheduled jobs (cron)
   - Authentication method (JWT, OAuth2)
 - [ ] Generated code includes:
@@ -66,13 +66,13 @@ Application Development Scaffolding
 ```
 Backstage UI
   └─> Software Template (YAML)
-      └─> HTTP POST to API Gateway (/workflows)
-          └─> Planner Agent (Lambda)
-              ├─> Publishes "task.created" event
-              └─> EventBridge routes to CodeGen Agent
-                  ├─> Retrieves templates from S3
+      └─> HTTP POST to Planner Agent (/workflows)
+          └─> Planner Agent (Podman container :8000)
+              ├─> Publishes "task.created" event (logged locally)
+              └─> Routes to CodeGen Agent (:8001)
+                  ├─> Retrieves templates from local storage (/data/artifacts/)
                   ├─> Renders templates with parameters
-                  ├─> Creates GitLab repository
+                  ├─> Creates GitHub repository via MCP Server (:8100)
                   ├─> Pushes generated code
                   └─> Updates Backstage catalog
 ```
@@ -120,10 +120,10 @@ spec:
 
 ### CodeGen Agent Implementation
 - **Language**: Python 3.11
-- **Framework**: AWS Lambda with Claude API integration
+- **Framework**: FastAPI container with Claude API integration
 - **Template Engine**: Jinja2
-- **Template Storage**: S3 bucket (`codegen-templates-{env}`)
-- **Output Storage**: S3 bucket (`agent-artifacts-{env}`)
+- **Template Storage**: Local filesystem (`/data/artifacts/templates/`)
+- **Output Storage**: Local filesystem (`/data/artifacts/output/`)
 
 ### API Endpoint
 ```
@@ -143,19 +143,17 @@ Content-Type: application/json
 }
 ```
 
-### Database Schema (DynamoDB)
-**Table**: `workflows`
-- PK: `workflow_id` (String)
-- SK: `task_id` (String)
-- Attributes: `status`, `agent`, `created_at`, `completed_at`, `output_url`
+### Database Schema (Local JSON Store)
+**Collection**: `workflows` (stored in `/data/db/workflows.json`)
+- Key: `workflow_id` (String)
+- Fields: `task_id`, `status`, `agent`, `created_at`, `completed_at`, `output_url`
 
 ## Dependencies
-- [ ] API Gateway endpoint configured
-- [ ] Planner Agent Lambda deployed
-- [ ] CodeGen Agent Lambda deployed
-- [ ] S3 buckets created for templates and artifacts
-- [ ] DynamoDB table `workflows` created
-- [ ] GitLab API token stored in Secrets Manager
+- [ ] Planner Agent container deployed (port 8000)
+- [ ] CodeGen Agent container deployed (port 8001)
+- [ ] MCP GitHub Server container deployed (port 8100)
+- [ ] Local data volume mounted at `/data`
+- [ ] GitHub token set in `.env` file
 - [ ] Backstage backend plugin for API communication
 
 ## Testing Strategy
@@ -190,10 +188,10 @@ Content-Type: application/json
 - Reduction in setup-related support tickets: > 70%
 
 ## Related Issues
-- #TBD: Implement Planner Agent Lambda
-- #TBD: Implement CodeGen Agent Lambda
+- #TBD: Implement Planner Agent container
+- #TBD: Implement CodeGen Agent container
 - #TBD: Create service template library (Python, Node.js, Go)
-- #TBD: Deploy API Gateway and EventBridge infrastructure
+- #TBD: Configure inter-agent HTTP routing
 
 ## Documentation
 - Update architecture.md with Backstage integration details

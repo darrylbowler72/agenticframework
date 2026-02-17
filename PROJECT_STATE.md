@@ -1,225 +1,121 @@
 # DevOps Agentic Framework - Project State Snapshot
 
-**Date**: 2025-12-11
-**Git Commit**: 44b646d - "Clean up documentation and update version"
-**Branch**: main
+**Date**: 2026-02-17
+**Branch**: local-podman
+**Deployment**: Local Podman containers (no cloud infrastructure)
 
 ## Current Deployment Status
 
-### Infrastructure Status: OPERATIONAL ✅
+### Infrastructure Status: LOCAL
 
-**Region**: us-east-1
-**Environment**: dev
-**API Gateway URL**: https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev
+**Runtime**: Podman containers on local machine
+**Network**: `agentic-local` (bridge)
+**Volume**: `local-data` at `/data`
 
 ### Agent Versions
 
-| Agent | Version | Container Image | Port | Status |
-|-------|---------|----------------|------|--------|
-| Planner Agent | 1.0.x | 773550624765.dkr.ecr.us-east-1.amazonaws.com/planner-agent:latest | 8000 | ✅ Active |
-| CodeGen Agent | 1.0.x | 773550624765.dkr.ecr.us-east-1.amazonaws.com/codegen-agent:latest | 8001 | ✅ Active |
-| Remediation Agent | 1.0.x | 773550624765.dkr.ecr.us-east-1.amazonaws.com/remediation-agent:latest | 8002 | ✅ Active |
-| Chatbot Agent | 1.0.x | 773550624765.dkr.ecr.us-east-1.amazonaws.com/chatbot-agent:latest | 8003 | ✅ Active |
-| Migration Agent | 1.0.26 | 773550624765.dkr.ecr.us-east-1.amazonaws.com/migration-agent:1.0.26 | 8004 | ✅ Active |
-| MCP GitHub Server | 1.0.x | 773550624765.dkr.ecr.us-east-1.amazonaws.com/mcp-github:latest | 8100 | ✅ Active |
+| Agent | Version | Container Name | Port | Image |
+|-------|---------|---------------|------|-------|
+| MCP GitHub Server | 1.0.5 | mcp-github | 8100 | mcp-github:latest |
+| Planner Agent | 1.0.0 | planner-agent | 8000 | planner-agent:latest |
+| CodeGen Agent | 1.0.0 | codegen-agent | 8001 | codegen-agent:latest |
+| Remediation Agent | 1.0.0 | remediation-agent | 8002 | remediation-agent:latest |
+| Chatbot Agent | 1.0.0 | chatbot-agent | 8003 | chatbot-agent:latest |
+| Migration Agent | 1.0.0 | migration-agent | 8004 | migration-agent:latest |
 
-### AWS Resources Deployed
+### Local Resources
 
 **Compute**:
-- ECS Cluster: `dev-agentic-cluster`
-  - 5 Fargate services (planner, codegen, remediation, chatbot, migration)
-  - 1 MCP server (mcp-github)
-  - Task Definition: Fargate, 512 CPU / 1024 MB Memory per service
+- 6 Podman containers running on the `agentic-local` bridge network
+- Each container runs a FastAPI application with uvicorn
+
+**Storage** (LOCAL_MODE=true replacements):
+- DynamoDB replacement: JSON file-backed in-memory store (`/data/db/`)
+- S3 replacement: Local filesystem (`/data/artifacts/`)
+- EventBridge replacement: No-op with logging
+- Secrets Manager replacement: Environment variables (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`)
 
 **Networking**:
-- VPC: Custom VPC with public/private subnets across 2 AZs
-- Application Load Balancer: `dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com`
-  - 5 target groups (planner-tg, codegen-tg, remediation-tg, chatbot-tg, migration-tg)
-- API Gateway: HTTP API with VPC Link
-  - Base URL: `https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev`
-  - Routes: POST /workflows, POST /generate, POST /remediate, POST /chat, POST /migration/*
-
-**Storage**:
-- DynamoDB Tables:
-  - `dev-workflows` - Workflow state management
-  - `dev-chatbot-sessions` - Chat session state
-- S3 Buckets:
-  - Generated code artifacts
-  - Workflow templates
-  - Terraform state
-
-**Security**:
-- AWS Secrets Manager:
-  - `dev-anthropic-api-key` - Claude API key
-  - `dev-github-credentials` - GitHub Personal Access Token
-- IAM Roles:
-  - ECS Task Execution Role
-  - ECS Task Role with permissions for DynamoDB, S3, Secrets Manager
-
-**Container Registry**:
-- ECR Repositories (5):
-  - planner-agent
-  - codegen-agent
-  - remediation-agent
-  - chatbot-agent
-  - migration-agent
-  - mcp-github
-
-**Monitoring**:
-- CloudWatch Logs: `/aws/ecs/dev-agentic-cluster`
-- CloudWatch Metrics: ECS service metrics
-- ALB Access Logs (if enabled)
+- Container DNS via `agentic-local` bridge network
+- Direct port mapping to localhost (8000-8004, 8100)
+- No load balancer or API gateway required
 
 ### Key Features Implemented
 
-1. **AI-Powered Migration** (v1.0.26)
+1. **AI-Powered Migration**
    - Jenkins to GitHub Actions pipeline conversion
    - LLM-powered intelligent parsing and generation
-   - Platform command cleanup (Windows → Linux)
+   - Platform command cleanup (Windows to Linux)
    - GitHub integration for workflow creation
 
 2. **Multi-Agent System**
    - Planner: Workflow orchestration
    - CodeGen: Microservice generation
    - Remediation: Auto-fix broken pipelines
-   - Chatbot: Natural language interface
+   - Chatbot: Natural language interface (AADOP branded)
    - Migration: Pipeline conversion
 
 3. **Model Context Protocol (MCP)**
-   - Standardized GitHub operations
+   - Standardized GitHub operations via MCP server
    - Centralized credential management
    - Extensible tool interface
 
-4. **Event-Driven Architecture**
-   - EventBridge custom event bus
-   - Asynchronous task orchestration
-   - State management in DynamoDB
+4. **LangGraph Orchestration**
+   - All agents use LangGraph StateGraph for workflow execution
+   - Conditional routing with fallbacks (LLM to regex, LLM to template)
+   - Retry cycles for remediation (up to 3 attempts)
 
 ### Configuration Files
 
-**Terraform State**:
-- Backend: S3 bucket with DynamoDB locking
-- Location: `iac/terraform/environments/dev/`
-- State File: Remote (S3)
+**Compose File**: `docker-compose.local.yml`
+**Environment**: `.env` file (local, not in git)
+**Launcher Script**: `scripts/run-local.sh`
 
-**Environment Variables**:
-- `.env` file (local, not in git)
-- Contains AWS credentials and API keys
+**Dockerfiles**:
+- `backend/Dockerfile.planner`
+- `backend/Dockerfile.codegen`
+- `backend/Dockerfile.remediation`
+- `backend/Dockerfile.chatbot`
+- `backend/Dockerfile.migration`
+- `backend/Dockerfile.mcp-github`
 
-**Docker Images**:
-- All agent images built with Podman
-- Stored in ECR with versioned tags
-- Latest tags updated on each deployment
-
-## Recent Changes
-
-**Latest Commits** (last 5):
-1. `44b646d` - Clean up documentation and update version
-2. `0ca0999` - Document Migration Agent pipeline conversion process
-3. `64cb24f` - Update documentation with Migration Agent details
-4. `61b1418` - Fix Windows commands in Linux workflows - Add cleanup function call
-5. `f5d09a9` - Fix cleanup function with robust string handling (v1.0.25)
-
-**Documentation Status**:
-- README.md - Updated with all 6 agents
-- architecture.md (v1.1.1) - Complete technical documentation
-- Migration Agent fully documented with conversion process
-
-## Known Issues
-
-None currently tracked.
-
-## Next Steps for Resume
-
-When resuming this project:
-
-1. **Verify Infrastructure State**:
-   ```bash
-   cd iac/terraform/environments/dev
-   terraform init
-   terraform plan
-   ```
-
-2. **Check Service Health**:
-   ```bash
-   curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/planner/health
-   curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/codegen/health
-   curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/remediation/health
-   curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/chat/health
-   curl https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/migration/health
-   ```
-
-3. **Review ECS Services**:
-   ```bash
-   aws ecs list-services --cluster dev-agentic-cluster --region us-east-1
-   aws ecs describe-services --cluster dev-agentic-cluster --services dev-planner-agent dev-codegen-agent dev-remediation-agent dev-chatbot-agent dev-migration-agent --region us-east-1
-   ```
-
-4. **Access Chatbot**:
-   - URL: https://d9bf4clz2f.execute-api.us-east-1.amazonaws.com/dev/
-
-## Cost Estimate
-
-Monthly cost for 24/7 operation (dev environment):
-
-| Service | Estimated Cost |
-|---------|----------------|
-| ECS Fargate (5 tasks) | ~$45-60 |
-| Application Load Balancer | ~$20-25 |
-| API Gateway | ~$3-5 |
-| VPC (NAT Gateways) | ~$100-120 |
-| DynamoDB | ~$5-10 |
-| S3 + CloudWatch | ~$5-10 |
-| **Total** | **~$180-230/month** |
-
-## Secrets Required for Redeployment
-
-When redeploying from scratch:
-
-1. **Anthropic API Key**:
-   ```bash
-   aws secretsmanager put-secret-value \
-     --secret-id dev-anthropic-api-key \
-     --secret-string '{"api_key":"YOUR_KEY"}'
-   ```
-
-2. **GitHub Credentials**:
-   ```bash
-   aws secretsmanager put-secret-value \
-     --secret-id dev-github-credentials \
-     --secret-string '{"token":"YOUR_TOKEN","owner":"darrylbowler72"}'
-   ```
-
-## Deployment Scripts
-
-**Available Scripts**:
-- `scripts/02-setup-aws-backend.sh` - Setup Terraform backend
-- `scripts/03-deploy-infrastructure.sh` - Deploy infrastructure
-- `scripts/05-deploy-agents-podman.sh` - Build and deploy all agents
-- `scripts/deploy-migration.sh` - Deploy migration agent specifically
-
-## Infrastructure Teardown
-
-To destroy all AWS resources:
+## Quick Start
 
 ```bash
-cd iac/terraform/environments/dev
-terraform destroy -auto-approve
+# 1. Create .env from template
+cp .env.local.template .env
+# Edit .env: set ANTHROPIC_API_KEY and GITHUB_TOKEN
+
+# 2. Build images (first time only)
+bash scripts/run-local.sh build
+
+# 3. Start services (reuses cached images)
+bash scripts/run-local.sh up
+
+# 4. Check health
+curl http://localhost:8000/health  # Planner
+curl http://localhost:8001/health  # CodeGen
+curl http://localhost:8002/health  # Remediation
+curl http://localhost:8003/health  # Chatbot
+curl http://localhost:8004/health  # Migration
+curl http://localhost:8100/health  # MCP GitHub
+
+# 5. Management
+bash scripts/run-local.sh status   # Check status
+bash scripts/run-local.sh logs     # View logs
+bash scripts/run-local.sh down     # Stop everything
+bash scripts/run-local.sh rebuild  # Force rebuild and start
 ```
 
-**Note**: This will delete:
-- All ECS services and tasks
-- Application Load Balancer
-- API Gateway
-- VPC and networking
-- DynamoDB tables (with data)
-- CloudWatch logs
-- IAM roles
+## Secrets Required
 
-**Preserved Resources**:
-- ECR container images (must be deleted manually)
-- S3 buckets (may require manual deletion if not empty)
-- Secrets Manager secrets (retained with deletion window)
+All secrets are passed via `.env` file (gitignored):
+
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | Claude AI API key |
+| `GITHUB_TOKEN` | GitHub personal access token |
+| `GITHUB_OWNER` | GitHub username (default: darrylbowler72) |
 
 ## Contact & Support
 
@@ -229,6 +125,5 @@ terraform destroy -auto-approve
 
 ---
 
-**State Saved**: 2025-12-11
-**Ready for Terraform Destroy**: Yes
-**Backup Verified**: Documentation up to date in git
+**State Saved**: 2026-02-17
+**Deployment Mode**: Local (Podman)

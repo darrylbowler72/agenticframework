@@ -72,26 +72,25 @@ Automated Remediation & Self-Healing Systems
 ### Architecture Components
 ```
 GitLab/GitHub Webhook
-  └─> EventBridge (pipeline.failed event)
-      └─> Remediation Agent (ECS Fargate)
-          ├─> Fetch pipeline logs (GitLab/GitHub API)
-          ├─> Analyze with Claude API (root cause)
-          ├─> Query Remediation Playbook DB (DynamoDB)
-          ├─> Execute fix based on category:
-          │   ├─> Retry pipeline (GitLab API)
-          │   ├─> Update config (Git commit)
-          │   ├─> Update secrets (Secrets Manager)
-          │   └─> Adjust resources (pipeline config)
-          ├─> Monitor new pipeline run
-          └─> Send notification (Slack/Email)
+  └─> Remediation Agent (Podman container :8002)
+      ├─> Fetch pipeline logs (GitHub API via MCP Server :8100)
+      ├─> Analyze with Claude API (root cause)
+      ├─> Query Remediation Playbook DB (local JSON store)
+      ├─> Execute fix based on category:
+      │   ├─> Retry pipeline (GitHub API via MCP)
+      │   ├─> Update config (Git commit via MCP)
+      │   ├─> Update env vars (configuration file)
+      │   └─> Adjust resources (pipeline config)
+      ├─> Monitor new pipeline run
+      └─> Send notification (Slack/Email)
 ```
 
 ### Remediation Agent Implementation
-- **Runtime**: ECS Fargate (persistent service for complex workflow orchestration)
+- **Runtime**: FastAPI container (persistent service for complex workflow orchestration)
 - **Language**: Python 3.11
 - **AI Model**: Claude API for log analysis and root cause identification
-- **Playbook Storage**: DynamoDB table `remediation_playbooks`
-- **Execution History**: DynamoDB table `remediation_actions`
+- **Playbook Storage**: Local JSON store (`/data/db/remediation_playbooks.json`)
+- **Execution History**: Local JSON store (`/data/db/remediation_actions.json`)
 
 ### Failure Categories & Auto-Fix Strategies
 
@@ -244,9 +243,9 @@ Output JSON:
 }
 ```
 
-### Remediation Playbook Schema (DynamoDB)
+### Remediation Playbook Schema (Local JSON Store)
 
-**Table**: `remediation_playbooks`
+**Collection**: `remediation_playbooks` (stored in `/data/db/remediation_playbooks.json`)
 ```json
 {
   "playbook_id": "pb-dependency-missing",
@@ -279,9 +278,9 @@ Output JSON:
 }
 ```
 
-### Execution History Schema (DynamoDB)
+### Execution History Schema (Local JSON Store)
 
-**Table**: `remediation_actions`
+**Collection**: `remediation_actions` (stored in `/data/db/remediation_actions.json`)
 ```json
 {
   "action_id": "ra-78901",
@@ -341,7 +340,9 @@ def handle_pipeline_webhook():
                 'stages': payload['builds']
             }
         }
-        eventbridge.put_events(Entries=[event])
+        # Log event and forward to Remediation Agent
+        logger.info(f"Pipeline failed event: {event}")
+        requests.post("http://remediation-agent:8002/remediate", json=event)
 
     return {'status': 'received'}, 200
 ```
@@ -386,13 +387,12 @@ Time saved: ~15 minutes
 ```
 
 ## Dependencies
-- [ ] EventBridge configured for pipeline events
-- [ ] Remediation Agent ECS service deployed
-- [ ] DynamoDB tables created (`remediation_playbooks`, `remediation_actions`)
-- [ ] GitLab/GitHub API tokens with write access
-- [ ] Claude API access for log analysis
-- [ ] Slack webhook for notifications
-- [ ] IAM roles for Git operations and secret access
+- [ ] Remediation Agent container deployed (port 8002)
+- [ ] MCP GitHub Server container deployed (port 8100)
+- [ ] Local data volume mounted at `/data`
+- [ ] GitHub token with write access set in `.env` file
+- [ ] Claude API access for log analysis (`ANTHROPIC_API_KEY`)
+- [ ] Slack webhook for notifications (optional)
 
 ## Testing Strategy
 
@@ -405,7 +405,7 @@ Time saved: ~15 minutes
 ### 2. Integration Tests
 - End-to-end: webhook → analysis → fix → retry
 - GitLab API integration (commit, push, retry)
-- DynamoDB read/write operations
+- Local JSON store read/write operations
 - Slack notification delivery
 
 ### 3. Chaos Testing
@@ -422,7 +422,7 @@ Time saved: ~15 minutes
 **21 story points** (4-5 weeks for 2 developers)
 
 ### Breakdown
-- Webhook listener and EventBridge integration: 3 days
+- Webhook listener and event routing: 3 days
 - Log analysis and root cause detection (Claude API): 5 days
 - Playbook engine and execution logic: 5 days
 - Git operations (commit, push, PR creation): 3 days
@@ -456,8 +456,8 @@ Time saved: ~15 minutes
 | pb-infra-001 | Infrastructure | Network timeout | Yes (retry) | 70% |
 
 ## Related Issues
-- #TBD: Deploy Remediation Agent ECS service
-- #TBD: Create EventBridge rules for pipeline events
+- #TBD: Deploy Remediation Agent container
+- #TBD: Configure webhook event routing
 - #TBD: Implement Claude API integration for log analysis
 - #TBD: Build playbook engine and execution framework
 - #TBD: Create initial remediation playbook library

@@ -2,12 +2,11 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, local-podman]
   pull_request:
     branches: [main, develop]
 
 env:
-  AWS_REGION: us-east-1
   PYTHON_VERSION: "3.11"
 
 jobs:
@@ -28,14 +27,14 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/agents/common/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
           cd backend
-          pip install -r requirements.txt
+          pip install -r agents/common/requirements.txt
           pip install pytest pytest-cov pytest-asyncio black ruff mypy
 
       - name: Run linting
@@ -90,178 +89,43 @@ jobs:
           base: ${{ github.event.repository.default_branch }}
           head: HEAD
 
-  build-and-push-images:
-    name: Build and Push Docker Images
+  build-images:
+    name: Build Container Images
     runs-on: ubuntu-latest
     needs: [test-backend, security-scan]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/local-podman')
 
     strategy:
       matrix:
-        agent: [planner, codegen, remediation]
+        service:
+          - name: planner
+            dockerfile: backend/Dockerfile.planner
+          - name: codegen
+            dockerfile: backend/Dockerfile.codegen
+          - name: remediation
+            dockerfile: backend/Dockerfile.remediation
+          - name: chatbot
+            dockerfile: backend/Dockerfile.chatbot
+          - name: migration
+            dockerfile: backend/Dockerfile.migration
+          - name: mcp-github
+            dockerfile: backend/Dockerfile.mcp-github
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, tag, and push image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ matrix.agent }}-agent
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Build image
         run: |
-          docker build -f backend/Dockerfile.${{ matrix.agent }} -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest backend/
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-
-  terraform-plan:
-    name: Terraform Plan
-    runs-on: ubuntu-latest
-    needs: [test-backend]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.6.0
-
-      - name: Terraform Init
-        run: |
-          cd iac/terraform
-          terraform init -backend-config=environments/dev/backend.tfvars
-
-      - name: Terraform Format Check
-        run: |
-          cd iac/terraform
-          terraform fmt -check -recursive
-
-      - name: Terraform Validate
-        run: |
-          cd iac/terraform
-          terraform validate
-
-      - name: Terraform Plan
-        run: |
-          cd iac/terraform
-          terraform plan -var-file=environments/dev/terraform.tfvars -out=tfplan
-
-      - name: Upload Terraform Plan
-        uses: actions/upload-artifact@v3
-        with:
-          name: tfplan
-          path: iac/terraform/tfplan
-
-  terraform-apply:
-    name: Terraform Apply
-    runs-on: ubuntu-latest
-    needs: [terraform-plan, build-and-push-images]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: production
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.6.0
-
-      - name: Terraform Init
-        run: |
-          cd iac/terraform
-          terraform init -backend-config=environments/dev/backend.tfvars
-
-      - name: Download Terraform Plan
-        uses: actions/download-artifact@v3
-        with:
-          name: tfplan
-          path: iac/terraform/
-
-      - name: Terraform Apply
-        run: |
-          cd iac/terraform
-          terraform apply -auto-approve tfplan
-
-  deploy-lambda:
-    name: Deploy Lambda Functions
-    runs-on: ubuntu-latest
-    needs: [terraform-apply]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    strategy:
-      matrix:
-        agent: [planner, codegen, remediation]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Package Lambda function
-        run: |
-          cd backend
-          pip install -r requirements.txt -t agents/${{ matrix.agent }}/package/
-          cd agents/${{ matrix.agent }}/package/
-          zip -r ../deployment.zip .
-          cd ..
-          zip -g deployment.zip main.py
-          cd ../../common
-          zip -r ../agents/${{ matrix.agent }}/deployment.zip .
-
-      - name: Deploy to Lambda
-        run: |
-          aws lambda update-function-code \
-            --function-name dev-${{ matrix.agent }}-agent \
-            --zip-file fileb://backend/agents/${{ matrix.agent }}/deployment.zip
+          docker build -f ${{ matrix.service.dockerfile }} -t ${{ matrix.service.name }}-agent:${{ github.sha }} -t ${{ matrix.service.name }}-agent:latest .
 
   notify:
-    name: Notify Deployment
+    name: Notify Build Status
     runs-on: ubuntu-latest
-    needs: [deploy-lambda]
+    needs: [build-images]
     if: always()
 
     steps:
-      - name: Send notification
+      - name: Report status
         run: |
-          echo "Deployment completed for commit ${{ github.sha }}"
-          # Add Slack notification here if needed
+          echo "Build completed for commit ${{ github.sha }}"

@@ -14,7 +14,7 @@ Implements Backstage software templates that allow developers to create new micr
 **Key Features**:
 - Self-service microservice creation
 - Support for Python, Node.js, Go
-- Database integration (PostgreSQL, DynamoDB)
+- Database integration (PostgreSQL, Local JSON)
 - Auto-generated IaC, CI/CD, and Kubernetes manifests
 
 ---

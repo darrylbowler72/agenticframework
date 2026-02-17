@@ -16,7 +16,7 @@ Developer Experience & Intelligent Operations
 ### Must Have
 - [ ] Chatbot deployed and accessible in Slack workspace
 - [ ] Bot responds to natural language queries and commands
-- [ ] Authentication and authorization integrated (users mapped to IAM roles)
+- [ ] Authentication and authorization integrated
 - [ ] Core command categories supported:
   - **Status Queries**: "What's the status of user-service deployment?", "Show me failed pipelines"
   - **Workflow Triggers**: "Create a new microservice called payment-service", "Deploy user-service to staging"
@@ -56,24 +56,25 @@ Developer Experience & Intelligent Operations
 
 ### Architecture Components
 ```
-Slack/Teams Client
-  └─> Slack API / Teams Bot Framework
-      └─> Chatbot Lambda (NLP processing)
-          ├─> Claude API for intent recognition
-          ├─> Agent Router (maps intent to agent)
-          └─> Executes via:
-              ├─> API Gateway (/workflows, /deploy, /policy/validate)
-              ├─> DynamoDB queries (workflow status)
-              ├─> CloudWatch queries (logs/metrics)
-              └─> Returns formatted response
+Web Browser / Slack/Teams Client
+  └─> Chatbot Agent (Podman container :8003)
+      ├─> Claude API for intent recognition
+      ├─> Agent Router (maps intent to agent)
+      └─> Executes via:
+          ├─> Planner Agent (:8000) for workflows
+          ├─> CodeGen Agent (:8001) for code generation
+          ├─> Remediation Agent (:8002) for auto-fixes
+          ├─> Migration Agent (:8004) for pipeline conversion
+          ├─> MCP GitHub Server (:8100) for GitHub operations
+          └─> Returns formatted response
 ```
 
 ### Chatbot Agent Implementation
-- **Runtime**: AWS Lambda (Node.js 18 or Python 3.11)
+- **Runtime**: FastAPI container (Python 3.11)
 - **NLP Engine**: Claude API for natural language understanding
 - **Intent Classification**: Map user input to agent actions
-- **Session Management**: DynamoDB for conversation context
-- **Slack Integration**: Bolt for JavaScript (Node.js) or Bolt for Python
+- **Session Management**: Local JSON store (`/data/db/chatbot-sessions.json`)
+- **Web UI**: Built-in HTML/CSS/JS served via FastAPI static files
 
 ### Example Conversation Flows
 
@@ -125,7 +126,7 @@ Bot: Let me investigate user-service issues... 🔍
      2. Review slow queries in the last hour
      3. Consider scaling RDS instance or increasing connection pool
 
-     [View CloudWatch logs] [View RDS metrics] [Scale RDS]
+     [View logs] [View metrics] [Scale service]
 ```
 
 #### Flow 3: Create Service
@@ -197,38 +198,28 @@ Output JSON:
 ### API Integration Map
 | User Intent | API Endpoint | Agent |
 |-------------|-------------|--------|
-| Create service | POST /workflows | Planner → CodeGen |
-| Deploy service | POST /deploy | Deployment |
-| Check deployment | GET /workflows/{id} | Planner |
-| Validate policy | POST /policy/validate | Policy |
-| Get metrics | CloudWatch API | Observability |
-| View logs | CloudWatch Logs API | Observability |
+| Create service | POST /workflows | Planner (:8000) → CodeGen (:8001) |
+| Migrate pipeline | POST /migrate | Migration (:8004) |
+| Check deployment | GET /workflows/{id} | Planner (:8000) |
+| Auto-fix issue | POST /remediate | Remediation (:8002) |
+| GitHub operations | MCP tools | MCP GitHub (:8100) |
 
 ### Security & Authorization
-- **Slack User → AWS IAM Mapping**: DynamoDB table `slack_user_mappings`
-- **Role-Based Access**:
-  - Developer: Can create services, deploy to dev
-  - Senior Dev: Can deploy to staging
-  - DevOps: Can deploy to production, access all logs
-- **Audit Trail**: All commands logged to CloudTrail with user identity
+- **Authentication**: Environment variable-based (`GITHUB_TOKEN`, `ANTHROPIC_API_KEY`)
+- **Audit Trail**: All commands logged via structured JSON logging
 
-### Database Schema (DynamoDB)
-**Table**: `chatbot_sessions`
-- PK: `session_id` (String) - Slack thread ID
-- Attributes: `user_id`, `context`, `last_interaction`, `ttl` (24 hours)
-
-**Table**: `slack_user_mappings`
-- PK: `slack_user_id` (String)
-- Attributes: `iam_role_arn`, `email`, `permissions`
+### Database Schema (Local JSON Store)
+**Collection**: `chatbot_sessions` (stored in `/data/db/chatbot-sessions.json`)
+- Key: `session_id` (String)
+- Fields: `user_id`, `context`, `last_interaction`, `ttl`
 
 ## Dependencies
-- [ ] Slack workspace and bot token
-- [ ] AWS Lambda for chatbot runtime
-- [ ] API Gateway endpoints for all agents
-- [ ] DynamoDB tables for session management
-- [ ] Claude API access for NLP
-- [ ] IAM roles for different permission levels
-- [ ] CloudWatch Logs read access
+- [ ] Chatbot Agent container deployed (port 8003)
+- [ ] All agent containers running on `agentic-local` network
+- [ ] MCP GitHub Server container deployed (port 8100)
+- [ ] Local data volume mounted at `/data`
+- [ ] Claude API access for NLP (`ANTHROPIC_API_KEY`)
+- [ ] GitHub token set in `.env` file
 
 ## Testing Strategy
 1. **Unit Tests**:
@@ -236,7 +227,7 @@ Output JSON:
    - Parameter extraction accuracy
    - Error handling for malformed inputs
 2. **Integration Tests**:
-   - End-to-end flow: Slack → Lambda → Agent → Response
+   - End-to-end flow: Web UI → Chatbot Agent → Target Agent → Response
    - Authorization checks for different roles
    - Session context persistence
 3. **User Acceptance Testing**:

@@ -3,10 +3,12 @@
 # run-local.sh - Launch the Agentic Framework locally using Podman or Docker
 #
 # Usage:
-#   bash scripts/run-local.sh up       # Start all services
+#   bash scripts/run-local.sh up       # Start services (reuse cached images)
+#   bash scripts/run-local.sh build    # Build/rebuild all container images
+#   bash scripts/run-local.sh rebuild  # Force rebuild and start all services
 #   bash scripts/run-local.sh down     # Stop all services
 #   bash scripts/run-local.sh logs     # Tail logs from all services
-#   bash scripts/run-local.sh restart  # Restart all services
+#   bash scripts/run-local.sh restart  # Restart all services (no rebuild)
 #   bash scripts/run-local.sh status   # Show service status
 #
 
@@ -94,10 +96,33 @@ validate_env() {
 cmd_up() {
     validate_env
     echo "Starting Agentic Framework (local mode)..."
+    echo "Using cached images. Run 'build' or 'rebuild' to update images."
+    $COMPOSE_CMD -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
+    echo ""
+    echo "Services starting. Use 'bash scripts/run-local.sh logs' to watch."
+    echo ""
+    print_urls
+}
+
+cmd_build() {
+    validate_env
+    echo "Building container images..."
+    $COMPOSE_CMD -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build
+    echo ""
+    echo "All images built. Run 'bash scripts/run-local.sh up' to start services."
+}
+
+cmd_rebuild() {
+    validate_env
+    echo "Rebuilding and starting Agentic Framework (local mode)..."
     $COMPOSE_CMD -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build
     echo ""
     echo "Services starting. Use 'bash scripts/run-local.sh logs' to watch."
     echo ""
+    print_urls
+}
+
+print_urls() {
     echo "Service URLs:"
     echo "  Planner Agent:     http://localhost:8000/health"
     echo "  CodeGen Agent:     http://localhost:8001/health"
@@ -131,18 +156,22 @@ cmd_status() {
 # -------------------------------------------------------------------
 case "${1:-help}" in
     up)      cmd_up ;;
+    build)   cmd_build ;;
+    rebuild) cmd_rebuild ;;
     down)    cmd_down ;;
     logs)    cmd_logs ;;
     restart) cmd_restart ;;
     status)  cmd_status ;;
     *)
-        echo "Usage: bash scripts/run-local.sh {up|down|logs|restart|status}"
+        echo "Usage: bash scripts/run-local.sh {up|build|rebuild|down|logs|restart|status}"
         echo ""
         echo "Commands:"
-        echo "  up       Build and start all services"
+        echo "  up       Start services using cached images"
+        echo "  build    Build/rebuild container images only"
+        echo "  rebuild  Force rebuild and start all services"
         echo "  down     Stop and remove all services"
         echo "  logs     Tail logs from all services"
-        echo "  restart  Stop then start all services"
+        echo "  restart  Restart services (no rebuild)"
         echo "  status   Show running services"
         exit 1
         ;;
