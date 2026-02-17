@@ -663,6 +663,9 @@ Analyze the intent and provide your response in JSON format."""
             files_pushed = []
             files_failed = []
             for file_path, content in template_files.items():
+                # Ensure content is always a string (Claude may return dicts for JSON files)
+                if not isinstance(content, str):
+                    content = json.dumps(content, indent=2)
                 last_error = None
                 for attempt in range(3):
                     try:
