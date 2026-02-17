@@ -145,13 +145,22 @@ async def mcp_call(request: MCPRequest) -> MCPResponse:
 
         return MCPResponse(id=request.id, result=result)
 
-    except Exception as e:
-        logger.error(f"MCP call error: {e}")
+    except HTTPException as e:
+        logger.error(f"MCP call error: HTTP {e.status_code}: {e.detail}")
         return MCPResponse(
             id=request.id,
             error={
                 "code": -32603,
-                "message": str(e)
+                "message": f"HTTP {e.status_code}: {e.detail}"
+            }
+        )
+    except Exception as e:
+        logger.error(f"MCP call error: {type(e).__name__}: {e}")
+        return MCPResponse(
+            id=request.id,
+            error={
+                "code": -32603,
+                "message": f"{type(e).__name__}: {e}"
             }
         )
 

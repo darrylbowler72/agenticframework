@@ -659,28 +659,37 @@ Analyze the intent and provide your response in JSON format."""
             # Brief pause to let branch refs propagate on GitHub
             await asyncio.sleep(2)
 
-            # Step 5: Push template files to the develop branch (sequential with small delay)
+            # Step 5: Push template files to the develop branch (sequential with retry)
             files_pushed = []
             files_failed = []
             for file_path, content in template_files.items():
-                try:
-                    push_result = await self.call_mcp_github(
-                        "github.create_file",
-                        {
-                            "repo_name": repo_name,
-                            "file_path": file_path,
-                            "content": content,
-                            "message": f"Add {file_path} - {framework} project bootstrap",
-                            "branch": "develop"
-                        }
-                    )
-                    if push_result.get("success"):
-                        files_pushed.append(file_path)
-                    else:
-                        files_failed.append({"path": file_path, "error": push_result.get("error")})
-                except Exception as e:
-                    files_failed.append({"path": file_path, "error": str(e)})
-                # Small delay between file pushes to avoid GitHub API rate issues
+                last_error = None
+                for attempt in range(3):
+                    try:
+                        push_result = await self.call_mcp_github(
+                            "github.create_file",
+                            {
+                                "repo_name": repo_name,
+                                "file_path": file_path,
+                                "content": content,
+                                "message": f"Add {file_path} - {framework} project bootstrap",
+                                "branch": "develop"
+                            }
+                        )
+                        if push_result.get("success"):
+                            files_pushed.append(file_path)
+                            last_error = None
+                            break
+                        else:
+                            last_error = push_result.get("error")
+                            self.logger.warning(f"File push attempt {attempt + 1} failed for {file_path}: {last_error}")
+                            await asyncio.sleep(2)
+                    except Exception as e:
+                        last_error = str(e)
+                        await asyncio.sleep(2)
+                if last_error:
+                    files_failed.append({"path": file_path, "error": last_error})
+                # Small delay between files to avoid GitHub API rate issues
                 await asyncio.sleep(0.5)
 
             setup_result["steps"]["files"] = {
