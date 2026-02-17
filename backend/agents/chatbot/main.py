@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import asyncio
 import httpx
 
 # Add parent directory to path for imports
@@ -347,7 +348,7 @@ You can help users with:
 1. **Create Workflows** - Plan and decompose DevOps tasks into executable workflows
 2. **Generate Code** - Create microservices, infrastructure code, CI/CD pipelines
 3. **Remediate Issues** - Analyze and fix CI/CD pipeline failures
-4. **GitHub Operations** - Create/delete/list repositories, create branches, manage gitflow branching (owner: darrylbowler72)
+4. **GitHub Operations** - Create/delete/list repositories, create branches, manage gitflow branching, set up new projects with framework templates (owner: darrylbowler72)
 5. **Jenkins Operations** - List Jenkins jobs, get job details, test Jenkins connection, create jobs
 6. **Pipeline Migration** - Convert Jenkins pipelines to GitHub Actions workflows
 7. **General Help** - Answer questions about DevOps, the framework, or provide guidance
@@ -366,14 +367,15 @@ For action_needed=true, extract parameters:
 - workflow: {"description": "...", "environment": "dev/staging/prod", "template": "default", "requested_by": "user", "parameters": {}}
 - codegen: {"service_name": "...", "language": "...", "database": "...", "api_type": "..."}
 - remediation: {"pipeline_id": "...", "project_id": "..."}
-- github: {"operation": "create_repo|delete_repo|list_repos|create_branch|create_gitflow", "repo_name": "...", "description": "...", "private": true/false, "max_repos": 30, "branch_name": "...", "from_branch": "main"}
+- github: {"operation": "create_repo|delete_repo|list_repos|create_branch|create_gitflow|setup_project", "repo_name": "...", "description": "...", "private": true/false, "max_repos": 30, "branch_name": "...", "from_branch": "main", "template_framework": "angular|react|nextjs|none"}
 - jenkins: {"operation": "list_jobs|get_job|test_connection", "job_name": "...", "jenkins_url": "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins", "username": "admin", "password": "admin"}
 - migration: {"job_name": "...", "github_repo": "...", "jenkins_migration": true} for Jenkins job migration OR {"jenkinsfile_content": "...", "project_name": "...", "repository_url": "..."} for generic Jenkinsfile migration
 
 GitHub operation notes:
 - "create_repo": Create a new repository
 - "create_branch": Create a single branch in an existing repo
-- "create_gitflow": Create standard gitflow branches (develop, feature/*, release/*, hotfix/*)
+- "create_gitflow": Create standard gitflow branches (develop, release/1.0.0, hotfix/initial) - auto-creates repo if needed
+- "setup_project": Create repo + gitflow branches + push framework template files (Angular, React, Next.js, etc.). Use this when the user wants to bootstrap/scaffold a new project.
 
 Jenkins operation notes:
 - "list_jobs": List all Jenkins jobs (ALWAYS set action_needed=true when user asks to: "list", "show", "get", "display" Jenkins jobs or pipelines)
@@ -560,10 +562,28 @@ Analyze the intent and provide your response in JSON format."""
                             from_branch=parameters.get("from_branch", "main")
                         )
                     elif operation == "create_gitflow":
-                        # Create gitflow branches: develop, feature, release, hotfix
+                        # Create gitflow branches: develop, release, hotfix
                         repo_name = parameters.get("repo_name", "")
                         results = []
-                        for branch in ["develop"]:  # Start with develop
+
+                        # Auto-create the repo if it doesn't exist
+                        try:
+                            gh_client, owner = await self._get_github_client()
+                            gh_client.get_repo(f"{owner}/{repo_name}")
+                            self.logger.info(f"Repository {repo_name} already exists")
+                        except Exception:
+                            self.logger.info(f"Repository {repo_name} not found, creating it")
+                            create_result = await self.create_github_repository(
+                                repo_name=repo_name,
+                                description=parameters.get("description", f"{repo_name} with gitflow branching"),
+                                auto_init=True
+                            )
+                            if not create_result.get("success"):
+                                return create_result
+                            # Wait for GitHub to initialize the default branch
+                            await asyncio.sleep(2)
+
+                        for branch in ["develop", "release/1.0.0", "hotfix/initial"]:
                             result = await self.create_github_branch(
                                 repo_name=repo_name,
                                 branch_name=branch,
@@ -571,6 +591,8 @@ Analyze the intent and provide your response in JSON format."""
                             )
                             results.append({"branch": branch, "result": result})
                         return {"success": True, "branches": results}
+                    elif operation == "setup_project":
+                        return await self._setup_project(parameters)
                     else:
                         return {"error": f"Unknown GitHub operation: {operation}"}
 
@@ -580,6 +602,142 @@ Analyze the intent and provide your response in JSON format."""
         except Exception as e:
             self.logger.error(f"Error executing action: {e}")
             return {"error": str(e)}
+
+    async def _setup_project(self, parameters: Dict) -> Dict:
+        """Set up a new project: create repo, gitflow branches, and push template files."""
+        repo_name = parameters.get("repo_name", "")
+        description = parameters.get("description", f"{repo_name} project")
+        framework = parameters.get("template_framework", "none").lower()
+        private = parameters.get("private", False)
+
+        setup_result = {
+            "operation": "setup_project",
+            "repo_name": repo_name,
+            "framework": framework,
+            "steps": {}
+        }
+
+        # Step 1: Create the repository
+        self.logger.info(f"setup_project: creating repo {repo_name}")
+        create_result = await self.create_github_repository(
+            repo_name=repo_name,
+            description=description,
+            private=private,
+            auto_init=True
+        )
+        setup_result["steps"]["create_repo"] = create_result
+        if not create_result.get("success"):
+            setup_result["success"] = False
+            setup_result["error"] = f"Failed to create repository: {create_result.get('error')}"
+            return setup_result
+
+        repo_url = create_result.get("repository", {}).get("url", "")
+
+        # Step 2: Wait for GitHub to initialize the default branch
+        await asyncio.sleep(2)
+
+        # Step 3: Create gitflow branches
+        self.logger.info(f"setup_project: creating gitflow branches for {repo_name}")
+        branches_created = []
+        for branch in ["develop", "release/1.0.0"]:
+            result = await self.create_github_branch(
+                repo_name=repo_name,
+                branch_name=branch,
+                from_branch="main"
+            )
+            branches_created.append({
+                "branch": branch,
+                "success": result.get("success", False)
+            })
+        setup_result["steps"]["branches"] = branches_created
+
+        # Step 4: Generate template files for the framework
+        if framework and framework != "none":
+            self.logger.info(f"setup_project: generating {framework} template for {repo_name}")
+            template_files = await self._generate_project_template(framework, repo_name)
+
+            # Step 5: Push template files to the develop branch
+            files_pushed = []
+            files_failed = []
+            for file_path, content in template_files.items():
+                try:
+                    push_result = await self.call_mcp_github(
+                        "github.create_file",
+                        {
+                            "repo_name": repo_name,
+                            "file_path": file_path,
+                            "content": content,
+                            "message": f"Add {file_path} - {framework} project bootstrap",
+                            "branch": "develop"
+                        }
+                    )
+                    if push_result.get("success"):
+                        files_pushed.append(file_path)
+                    else:
+                        files_failed.append({"path": file_path, "error": push_result.get("error")})
+                except Exception as e:
+                    files_failed.append({"path": file_path, "error": str(e)})
+
+            setup_result["steps"]["files"] = {
+                "pushed": files_pushed,
+                "failed": files_failed,
+                "total": len(template_files)
+            }
+
+        setup_result["success"] = True
+        setup_result["repo_url"] = repo_url
+        return setup_result
+
+    async def _generate_project_template(self, framework: str, project_name: str) -> Dict[str, str]:
+        """Generate boilerplate project files for a given framework using Claude."""
+        prompt = f"""Generate boilerplate files for a new {framework} project named "{project_name}".
+
+Return ONLY a valid JSON object where keys are file paths and values are file contents.
+Do NOT include node_modules, lock files, or binary files.
+Keep files minimal but functional - enough to run the project after npm install.
+
+For example:
+{{"package.json": "...", "src/index.ts": "...", "README.md": "..."}}
+
+Framework-specific requirements:
+- Angular: Include angular.json, tsconfig.json, package.json, src/main.ts, src/app/app.component.ts, src/app/app.module.ts, src/index.html, .gitignore
+- React: Include package.json, tsconfig.json (if TypeScript), src/index.tsx, src/App.tsx, public/index.html, .gitignore
+- Next.js: Include package.json, next.config.js, tsconfig.json, src/app/page.tsx, src/app/layout.tsx, .gitignore
+- Other: Include package.json, appropriate config files, src/index file, .gitignore
+
+Include a .github/workflows/ci.yml with a basic CI pipeline for the framework.
+Return ONLY the JSON object, no markdown fences or explanation."""
+
+        try:
+            response = await self.call_claude(
+                prompt=prompt,
+                system="You are a code generator. Return ONLY valid JSON with no markdown formatting.",
+                temperature=0.3
+            )
+
+            # Strip markdown fences if present
+            cleaned = response.strip()
+            if cleaned.startswith("```"):
+                first_newline = cleaned.index("\n")
+                cleaned = cleaned[first_newline + 1:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+
+            return json.loads(cleaned)
+        except (json.JSONDecodeError, ValueError) as e:
+            self.logger.error(f"Failed to parse template response: {e}")
+            # Return minimal fallback files
+            return {
+                "README.md": f"# {project_name}\n\nA {framework} project.\n",
+                ".gitignore": "node_modules/\ndist/\n.env\n",
+                "package.json": json.dumps({
+                    "name": project_name,
+                    "version": "0.1.0",
+                    "private": True,
+                    "description": f"A {framework} project"
+                }, indent=2)
+            }
 
     def _format_action_response(self, response: str, intent: str, action_result: Dict) -> str:
         """Format action results into the response string for the user."""
@@ -620,6 +778,26 @@ Analyze the intent and provide your response in JSON format."""
                         response += f"\n- {repo.get('name')} ({repo.get('language', 'N/A')}) - {repo.get('description', 'No description')}"
                     if count > 10:
                         response += f"\n... and {count - 10} more repositories"
+                elif action_result.get('operation') == 'setup_project':
+                    steps = action_result.get('steps', {})
+                    framework = action_result.get('framework', 'none')
+                    repo_url = action_result.get('repo_url', '')
+                    response += f"\n\n Project setup complete!"
+                    response += f"\n- Repository: {repo_url}"
+                    # Branches
+                    branches = steps.get('branches', [])
+                    created_branches = [b['branch'] for b in branches if b.get('success')]
+                    if created_branches:
+                        response += f"\n- Branches: main, {', '.join(created_branches)}"
+                    # Files
+                    files_info = steps.get('files', {})
+                    if files_info:
+                        pushed = files_info.get('pushed', [])
+                        failed = files_info.get('failed', [])
+                        response += f"\n- Framework: {framework}"
+                        response += f"\n- Files pushed to develop: {len(pushed)}"
+                        if failed:
+                            response += f"\n- Files failed: {len(failed)}"
                 elif 'branches' in action_result:
                     branches = action_result.get('branches', [])
                     response += f"\n\n Gitflow branches created!"
