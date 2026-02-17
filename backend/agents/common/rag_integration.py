@@ -133,7 +133,7 @@ class DocumentationRAG:
         Example questions:
         - "How do I deploy a new agent?"
         - "What are the infrastructure requirements?"
-        - "How do I troubleshoot ECS service failures?"
+        - "How do I troubleshoot container service failures?"
         """
         results = await self.rag.retrieve(
             query=question,

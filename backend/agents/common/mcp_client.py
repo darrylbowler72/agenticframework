@@ -85,7 +85,7 @@ class GitHubMCPClient:
 
         Args:
             mcp_server_url: MCP server URL. If not provided, uses MCP_GITHUB_URL env var
-                           or defaults to internal ECS service name.
+                           or defaults to internal container DNS name.
         """
         if mcp_server_url is None:
             mcp_server_url = os.getenv(

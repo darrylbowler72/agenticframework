@@ -900,7 +900,7 @@ async def migrate_jenkins_job(request: MigrateJobRequest):
     1. Fetches the Jenkins job configuration
     2. Extracts the pipeline script
     3. Converts it to GitHub Actions workflow
-    4. Loads GitHub token from Secrets Manager if not provided
+    4. Loads GitHub token from environment variables if not provided
     5. Optionally creates a GitHub repository
     6. Creates the workflow file in the repository
     """
