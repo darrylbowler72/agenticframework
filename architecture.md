@@ -10,6 +10,7 @@
 7. [Security & Configuration](#security--configuration)
 8. [API Specifications](#api-specifications)
 9. [Developer Guide](#developer-guide)
+10. [Technology Glossary](#technology-glossary)
 
 ---
 
@@ -624,5 +625,36 @@ To reset all data: `bash scripts/run-local.sh down` (removes volumes)
 
 ---
 
-*Last Updated: 2026-02-13*
+## Technology Glossary
+
+| Technology | Category | Description |
+|------------|----------|-------------|
+| **Python 3.11** | Language | Primary programming language used for all agents and the MCP server. |
+| **FastAPI** | Web Framework | High-performance async Python web framework used to expose REST endpoints on every agent. |
+| **Uvicorn** | ASGI Server | Lightning-fast ASGI server that runs each FastAPI application inside its container. |
+| **Pydantic** | Data Validation | Data validation and serialization library used for request/response models in all agents. |
+| **Anthropic SDK** | AI Client | Official Python SDK for calling the Claude AI API (`anthropic` library). Powers all LLM-driven agent logic. |
+| **Claude AI** | Large Language Model | Anthropic's LLM used by agents for intent analysis, code generation, pipeline parsing, remediation analysis, and workflow planning. |
+| **LangGraph** | Orchestration | Library from LangChain for building agent workflows as compiled StateGraph instances with conditional edges and retry loops. |
+| **LangChain Core** | AI Framework | Foundation library providing abstractions (messages, prompts, output parsers) that LangGraph builds upon. |
+| **LangChain Anthropic** | AI Integration | LangChain integration package for Claude AI, used alongside LangGraph for model invocation. |
+| **PyGithub** | GitHub Client | Python library for interacting with the GitHub REST API. Used by `BaseAgent` for repository operations. |
+| **HTTPX** | HTTP Client | Async-capable HTTP client used for inter-agent communication and MCP server calls. |
+| **Jinja2** | Templating | Template engine used by CodeGen and Migration agents to generate code files and workflow YAML. |
+| **python-dotenv** | Configuration | Loads environment variables from `.env` files into the process environment at startup. |
+| **Podman** | Container Runtime | Daemonless, rootless OCI container engine used to build and run all service containers. Drop-in replacement for Docker. |
+| **Podman Compose** | Container Orchestration | Compose tool for Podman that reads `docker-compose.local.yml` to start the full multi-service stack. |
+| **Docker Compose** | Container Orchestration | Alternative to Podman Compose; also supported for starting the service stack from `docker-compose.local.yml`. |
+| **OCI Containers** | Container Standard | Open Container Initiative standard that both Podman and Docker implement, ensuring image portability. |
+| **Model Context Protocol (MCP)** | Agent Protocol | Anthropic's open protocol for connecting AI agents to external tools. Used here to decouple agents from the GitHub API via a dedicated MCP server. |
+| **JSON-RPC 2.0** | RPC Protocol | Lightweight remote procedure call protocol used by the MCP GitHub Server for tool invocations. |
+| **GitHub Actions** | CI/CD | GitHub's built-in CI/CD platform. The Migration Agent converts Jenkins pipelines into GitHub Actions workflow YAML. |
+| **Jenkins** | CI/CD | Java-based CI/CD server. The Migration Agent reads Jenkinsfile pipelines for conversion to GitHub Actions. |
+| **GitHub REST API** | API | GitHub's HTTP API used (via PyGithub and MCP) for repository management, file creation, and workflow operations. |
+| **pytest** | Testing | Python testing framework used for agent unit and integration tests. Configured with `asyncio_mode = auto`. |
+| **asyncio** | Concurrency | Python's built-in async I/O library. All agents use async/await patterns for non-blocking operations. |
+
+---
+
+*Last Updated: 2026-02-17*
 *Version: 2.0.0 (local-podman)*
