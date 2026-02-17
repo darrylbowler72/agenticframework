@@ -281,7 +281,7 @@ class ChatbotAgent(BaseAgent):
 
                 if response.status_code == 200:
                     result = response.json()
-                    if "error" in result:
+                    if result.get("error"):
                         self.logger.error(f"MCP error: {result['error']}")
                         return {"success": False, "error": result['error']}
                     return {"success": True, "result": result.get("result", {})}
@@ -581,7 +581,7 @@ Analyze the intent and provide your response in JSON format."""
                             if not create_result.get("success"):
                                 return create_result
                             # Wait for GitHub to initialize the default branch
-                            await asyncio.sleep(2)
+                            await asyncio.sleep(3)
 
                         for branch in ["develop", "release/1.0.0", "hotfix/initial"]:
                             result = await self.create_github_branch(
@@ -634,7 +634,7 @@ Analyze the intent and provide your response in JSON format."""
         repo_url = create_result.get("repository", {}).get("url", "")
 
         # Step 2: Wait for GitHub to initialize the default branch
-        await asyncio.sleep(2)
+        await asyncio.sleep(3)
 
         # Step 3: Create gitflow branches
         self.logger.info(f"setup_project: creating gitflow branches for {repo_name}")
@@ -656,7 +656,10 @@ Analyze the intent and provide your response in JSON format."""
             self.logger.info(f"setup_project: generating {framework} template for {repo_name}")
             template_files = await self._generate_project_template(framework, repo_name)
 
-            # Step 5: Push template files to the develop branch
+            # Brief pause to let branch refs propagate on GitHub
+            await asyncio.sleep(2)
+
+            # Step 5: Push template files to the develop branch (sequential with small delay)
             files_pushed = []
             files_failed = []
             for file_path, content in template_files.items():
@@ -677,6 +680,8 @@ Analyze the intent and provide your response in JSON format."""
                         files_failed.append({"path": file_path, "error": push_result.get("error")})
                 except Exception as e:
                     files_failed.append({"path": file_path, "error": str(e)})
+                # Small delay between file pushes to avoid GitHub API rate issues
+                await asyncio.sleep(0.5)
 
             setup_result["steps"]["files"] = {
                 "pushed": files_pushed,
