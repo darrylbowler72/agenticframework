@@ -3,19 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DevOps at Your Service</title>
+    <title>AADOP | Accenture Agentic DevOps Platform</title>
     <link rel="stylesheet" href="/dev/static/style.css">
 </head>
 <body>
     <div class="chat-container">
         <div class="chat-header">
             <div class="header-content">
-                <h1>🤖 DevOps at Your Service</h1>
-                <p>Your AI-powered DevOps assistant</p>
+                <div class="header-logo">AADOP<span class="logo-gt"> &gt;</span></div>
+                <div>
+                    <h1>Agentic DevOps Platform</h1>
+                    <p>Intelligent Automation</p>
+                </div>
             </div>
             <div class="header-actions">
                 <button class="status-btn" onclick="toggleAgentStatus()" title="View agent status">
-                    <span class="status-indicator" id="overallStatus">●</span>
+                    <span class="status-indicator" id="overallStatus">&#9679;</span>
                 </button>
                 <button class="new-chat-btn" onclick="newChat()">New Chat</button>
             </div>
@@ -24,7 +27,7 @@
         <div class="agent-status-panel" id="agentStatusPanel" style="display: none;">
             <div class="status-header">
                 <h3>Agent Health Status</h3>
-                <button class="close-btn" onclick="toggleAgentStatus()">×</button>
+                <button class="close-btn" onclick="toggleAgentStatus()">&times;</button>
             </div>
             <div class="status-grid" id="agentStatusGrid">
                 <div class="status-loading">Loading agent status...</div>
@@ -33,16 +36,16 @@
 
         <div class="chat-messages" id="chatMessages">
             <div class="welcome-message">
-                <h2>👋 Welcome!</h2>
-                <p>I'm your DevOps assistant. I can help you with:</p>
+                <h2>Welcome to AADOP</h2>
+                <p>Your AI-powered DevOps platform. I can help you with:</p>
                 <ul>
-                    <li>📋 <strong>Create Workflows</strong> - Plan and organize your DevOps tasks</li>
-                    <li>💻 <strong>Generate Code</strong> - Create microservices, infrastructure, and pipelines</li>
-                    <li>🔧 <strong>Fix Issues</strong> - Remediate CI/CD pipeline failures</li>
-                    <li>🔄 <strong>Migrate Pipelines</strong> - Convert Jenkins pipelines to GitHub Actions</li>
-                    <li>💡 <strong>Get Help</strong> - Ask questions about DevOps best practices</li>
+                    <li><strong>Create Workflows</strong> &mdash; Plan and orchestrate your DevOps tasks</li>
+                    <li><strong>Generate Code</strong> &mdash; Create microservices, infrastructure, and pipelines</li>
+                    <li><strong>Fix Issues</strong> &mdash; Remediate CI/CD pipeline failures automatically</li>
+                    <li><strong>Migrate Pipelines</strong> &mdash; Convert Jenkins pipelines to GitHub Actions</li>
+                    <li><strong>Get Help</strong> &mdash; Ask questions about DevOps best practices</li>
                 </ul>
-                <p class="try-asking">Try asking: "Create a new Python microservice" or "Migrate my Jenkins pipeline to GitHub Actions"</p>
+                <p class="try-asking">Try: "Create a new Python microservice" or "Migrate my Jenkins pipeline to GitHub Actions"</p>
             </div>
         </div>
 

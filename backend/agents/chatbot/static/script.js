@@ -12,15 +12,16 @@ function newChat() {
         localStorage.setItem('chatSessionId', sessionId);
         document.getElementById('chatMessages').innerHTML = `
             <div class="welcome-message">
-                <h2>👋 Welcome!</h2>
-                <p>I'm your DevOps assistant. I can help you with:</p>
+                <h2>Welcome to AADOP</h2>
+                <p>Your AI-powered DevOps platform. I can help you with:</p>
                 <ul>
-                    <li>📋 <strong>Create Workflows</strong> - Plan and organize your DevOps tasks</li>
-                    <li>💻 <strong>Generate Code</strong> - Create microservices, infrastructure, and pipelines</li>
-                    <li>🔧 <strong>Fix Issues</strong> - Remediate CI/CD pipeline failures</li>
-                    <li>💡 <strong>Get Help</strong> - Ask questions about DevOps best practices</li>
+                    <li><strong>Create Workflows</strong> &mdash; Plan and orchestrate your DevOps tasks</li>
+                    <li><strong>Generate Code</strong> &mdash; Create microservices, infrastructure, and pipelines</li>
+                    <li><strong>Fix Issues</strong> &mdash; Remediate CI/CD pipeline failures automatically</li>
+                    <li><strong>Migrate Pipelines</strong> &mdash; Convert Jenkins pipelines to GitHub Actions</li>
+                    <li><strong>Get Help</strong> &mdash; Ask questions about DevOps best practices</li>
                 </ul>
-                <p class="try-asking">Try asking: "Create a new Python microservice" or "Help me plan a deployment workflow"</p>
+                <p class="try-asking">Try: "Create a new Python microservice" or "Migrate my Jenkins pipeline to GitHub Actions"</p>
             </div>
         `;
     }
@@ -116,7 +117,7 @@ function addMessage(role, content, action = null) {
 
     const avatar = document.createElement('div');
     avatar.className = 'message-avatar';
-    avatar.textContent = role === 'user' ? '👤' : '🤖';
+    avatar.textContent = role === 'user' ? 'U' : 'A';
 
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
@@ -130,10 +131,10 @@ function addMessage(role, content, action = null) {
         const actionBadge = document.createElement('div');
         actionBadge.className = 'action-badge';
         const actionLabels = {
-            'workflow': '📋 Workflow',
-            'codegen': '💻 Code Generation',
-            'remediation': '🔧 Remediation',
-            'help': '💡 Help'
+            'workflow': 'Workflow',
+            'codegen': 'Code Generation',
+            'remediation': 'Remediation',
+            'help': 'Help'
         };
         actionBadge.textContent = actionLabels[action] || action;
         contentDiv.appendChild(actionBadge);
