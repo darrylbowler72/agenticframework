@@ -367,7 +367,7 @@ For action_needed=true, extract parameters:
 - workflow: {"description": "...", "environment": "dev/staging/prod", "template": "default", "requested_by": "user", "parameters": {}}
 - codegen: {"service_name": "...", "language": "...", "database": "...", "api_type": "..."}
 - remediation: {"pipeline_id": "...", "project_id": "..."}
-- github: {"operation": "create_repo|delete_repo|list_repos|create_branch|create_gitflow|setup_project", "repo_name": "...", "description": "...", "private": true/false, "max_repos": 30, "branch_name": "...", "from_branch": "main", "template_framework": "angular|react|nextjs|none"}
+- github: {"operation": "create_repo|delete_repo|list_repos|create_branch|create_gitflow|setup_project", "repo_name": "...", "description": "...", "private": true/false, "max_repos": 30, "branch_name": "...", "from_branch": "main", "template_framework": "python|fastapi|flask|django|nodejs|express|react|angular|vue|nextjs|none"}
 - jenkins: {"operation": "list_jobs|get_job|test_connection", "job_name": "...", "jenkins_url": "http://dev-agents-alb-1535480028.us-east-1.elb.amazonaws.com/jenkins", "username": "admin", "password": "admin"}
 - migration: {"job_name": "...", "github_repo": "...", "jenkins_migration": true} for Jenkins job migration OR {"jenkinsfile_content": "...", "project_name": "...", "repository_url": "..."} for generic Jenkinsfile migration
 
@@ -705,9 +705,21 @@ Analyze the intent and provide your response in JSON format."""
         setup_result["repo_url"] = repo_url
         return setup_result
 
-    async def _generate_project_template(self, framework: str, project_name: str) -> Dict[str, str]:
-        """Generate boilerplate project files for a given framework using Claude."""
-        gitflow_workflow = f"""name: Gitflow CI/CD
+    def _build_gitflow_workflow(self, framework: str, project_name: str) -> str:
+        """Build a framework-aware Gitflow CI/CD workflow YAML."""
+        is_python = framework.lower() in ("python", "fastapi", "flask", "django")
+        is_node = framework.lower() in ("nodejs", "node", "express", "react", "angular", "vue", "next", "nextjs")
+
+        if is_python:
+            install_step = "run: pip install -r requirements.txt"
+            test_step = "run: python -m pytest --tb=short || echo 'No tests yet'"
+            build_steps = "      - name: Lint\n        run: python -m py_compile $(find . -name '*.py' | head -20) && echo 'Syntax OK'"
+        else:
+            install_step = "run: npm install"
+            test_step = "run: npm test"
+            build_steps = "      - name: Install dependencies\n        run: npm install\n      - name: Build\n        run: npm run build --if-present"
+
+        return f"""name: Gitflow CI/CD
 
 on:
   push:
@@ -727,9 +739,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install dependencies
-        run: npm install
+        {install_step}
       - name: Run tests
-        run: npm test
+        {test_step}
 
   build:
     name: Build
@@ -738,10 +750,7 @@ jobs:
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v3
-      - name: Install dependencies
-        run: npm install
-      - name: Build
-        run: npm run build --if-present
+{build_steps}
 
   deploy-dev:
     name: Deploy to Dev
@@ -762,35 +771,61 @@ jobs:
         run: echo "Deploying {project_name} to staging - release ${{{{ github.ref_name }}}}"
 """
 
-        prompt = f"""Generate boilerplate files for a new {framework} project named "{project_name}".
+    async def _generate_project_template(self, framework: str, project_name: str) -> Dict[str, str]:
+        """Generate boilerplate project files for a given framework using Claude.
 
-Return ONLY a valid JSON object where keys are file paths and values are file contents.
-All string values MUST use only double quotes and properly escape any special characters.
-Do NOT include node_modules, lock files, or binary files.
-Keep files minimal but functional.
+        Uses two separate LLM calls:
+        1. App code files (returned as JSON to allow structured parsing)
+        2. GitHub Actions workflow (returned as raw YAML to avoid JSON escaping issues)
+        Falls back to hardcoded templates if either LLM call fails.
+        """
+        # ── Call 1: Generate app code files ──────────────────────────────────
+        is_python = framework.lower() in ("python", "fastapi", "flask", "django")
+        is_node = framework.lower() in ("nodejs", "node", "express", "react", "angular", "vue", "nextjs")
 
-Framework-specific requirements:
-- nodejs/express: Include src/index.js, package.json (with express dependency, start script, and test script that uses "echo 'No tests yet' && exit 0"), .gitignore
-- react: Include src/App.tsx, src/index.tsx, public/index.html, package.json (test script must be "echo 'No tests yet' && exit 0"), tsconfig.json, .gitignore
-- angular: Include src/main.ts, src/app/app.component.ts, src/app/app.module.ts, src/index.html, package.json, angular.json, tsconfig.json, .gitignore
-- fastapi/python: Include main.py, requirements.txt, .gitignore
-- Other: Include appropriate entry file, dependency file, .gitignore
-
-Do NOT include a .github/workflows file - that will be added separately.
-Return ONLY the JSON object. No markdown fences. No explanation."""
-
-        try:
-            response = await self.call_claude(
-                prompt=prompt,
-                system="You are a code generator. Return ONLY a valid JSON object. No markdown. No extra text.",
-                temperature=0.2
+        if is_python:
+            framework_hint = (
+                "Python/FastAPI: main.py (FastAPI app with /, /health routes), "
+                "requirements.txt (fastapi, uvicorn), .gitignore"
+            )
+        elif framework.lower() in ("react",):
+            framework_hint = (
+                "React/TypeScript: src/App.tsx, src/index.tsx, public/index.html, "
+                "package.json (test script: \"echo 'No tests yet' && exit 0\"), tsconfig.json, .gitignore"
+            )
+        elif framework.lower() in ("angular",):
+            framework_hint = (
+                "Angular: src/main.ts, src/app/app.component.ts, src/app/app.module.ts, "
+                "src/index.html, package.json, angular.json, tsconfig.json, .gitignore"
+            )
+        else:
+            framework_hint = (
+                f"Node.js/Express: src/index.js (Express app with /, /health routes), "
+                f"package.json (express dep, start script, test: \"echo 'No tests yet' && exit 0\"), .gitignore"
             )
 
-            # Strip any markdown fences
+        code_prompt = f"""Generate boilerplate source files for a new {framework} project named "{project_name}".
+
+Files to generate: {framework_hint}
+
+Rules:
+- Return ONLY a valid JSON object: keys=file paths, values=file contents as strings
+- Escape ALL special characters in values (backslashes, quotes, newlines as \\n)
+- Do NOT include node_modules, lock files, binary files, or .github/workflows files
+- Keep code minimal but functional and runnable
+
+Return ONLY the JSON object. No markdown. No explanation."""
+
+        files = {}
+        try:
+            response = await self.call_claude(
+                prompt=code_prompt,
+                system="You are a code generator. Output ONLY a valid JSON object. No markdown fences. No extra text.",
+                temperature=0.2
+            )
             cleaned = response.strip()
             if cleaned.startswith("```"):
-                first_newline = cleaned.index("\n")
-                cleaned = cleaned[first_newline + 1:]
+                cleaned = cleaned[cleaned.index("\n") + 1:]
             if cleaned.endswith("```"):
                 cleaned = cleaned[:-3]
             cleaned = cleaned.strip()
@@ -799,46 +834,101 @@ Return ONLY the JSON object. No markdown fences. No explanation."""
             # Strip any leading project-name prefix Claude may add to paths
             stripped = {}
             for path, content in files.items():
-                # Remove leading "<project_name>/" prefix if present
                 if path.startswith(f"{project_name}/"):
                     path = path[len(project_name) + 1:]
                 stripped[path] = content
-            # Ensure package.json test script exits 0 (no tests defined yet)
-            if "package.json" in stripped:
+            files = stripped
+
+            # Ensure package.json test script exits 0
+            if "package.json" in files:
                 try:
-                    pkg = json.loads(stripped["package.json"])
-                    if pkg.get("scripts", {}).get("test", "").startswith("echo \"Error"):
+                    pkg = json.loads(files["package.json"])
+                    test_script = pkg.get("scripts", {}).get("test", "")
+                    if "exit 1" in test_script or test_script.startswith("echo \"Error"):
                         pkg["scripts"]["test"] = "echo 'No tests yet' && exit 0"
-                        stripped["package.json"] = json.dumps(pkg, indent=2)
+                        files["package.json"] = json.dumps(pkg, indent=2)
                 except (json.JSONDecodeError, KeyError):
                     pass
-            # Always inject the gitflow workflow (overwrites any Claude-generated one)
-            stripped[".github/workflows/ci.yml"] = gitflow_workflow
-            return stripped
+
+            self.logger.info(f"LLM generated {len(files)} app files for {framework}/{project_name}")
 
         except (json.JSONDecodeError, ValueError) as e:
-            self.logger.error(f"Failed to parse template response: {e}")
-            # Return hardcoded fallback based on framework
-            if framework in ("nodejs", "express", "node"):
-                app_files = {
+            self.logger.warning(f"LLM code generation failed ({e}), using hardcoded fallback")
+            if is_python:
+                files = {
+                    "main.py": f'from fastapi import FastAPI\n\napp = FastAPI(title="{project_name}")\n\n\n@app.get("/")\ndef root():\n    return {{"service": "{project_name}", "status": "running"}}\n\n\n@app.get("/health")\ndef health():\n    return {{"status": "healthy"}}\n',
+                    "requirements.txt": "fastapi>=0.104.0\nuvicorn[standard]>=0.24.0\n",
+                    ".gitignore": "__pycache__/\n*.pyc\n.env\nvenv/\n.venv/\ndist/\n",
+                }
+            elif framework.lower() in ("react",):
+                files = {
+                    "src/App.tsx": f'import React from \'react\';\nexport default function App() {{\n  return <div><h1>{project_name}</h1></div>;\n}}\n',
+                    "src/index.tsx": 'import React from \'react\';\nimport ReactDOM from \'react-dom/client\';\nimport App from \'./App\';\nReactDOM.createRoot(document.getElementById(\'root\')!).render(<React.StrictMode><App /></React.StrictMode>);\n',
+                    "package.json": json.dumps({"name": project_name, "version": "0.1.0", "private": True, "dependencies": {"react": "^18.2.0", "react-dom": "^18.2.0", "react-scripts": "5.0.1"}, "scripts": {"start": "react-scripts start", "build": "react-scripts build", "test": "echo 'No tests yet' && exit 0"}}, indent=2),
+                    ".gitignore": "node_modules/\ndist/\nbuild/\n.env\n",
+                }
+            elif is_node:
+                files = {
                     "src/index.js": f'const express = require(\'express\');\nconst app = express();\nconst PORT = process.env.PORT || 3000;\n\napp.use(express.json());\n\napp.get(\'/\', (req, res) => res.json({{ service: \'{project_name}\', status: \'running\' }}));\napp.get(\'/health\', (req, res) => res.json({{ status: \'healthy\' }}));\n\napp.listen(PORT, () => console.log(`Server on port ${{PORT}}`));\n',
                     "package.json": json.dumps({"name": project_name, "version": "1.0.0", "main": "src/index.js", "scripts": {"start": "node src/index.js", "test": "echo 'No tests yet' && exit 0"}, "dependencies": {"express": "^4.18.2"}}, indent=2),
                     ".gitignore": "node_modules/\n.env\ndist/\n",
                 }
-            elif framework in ("react",):
-                app_files = {
-                    "src/App.tsx": f'import React from \'react\';\nexport default function App() {{\n  return <div><h1>{project_name}</h1></div>;\n}}\n',
-                    "src/index.tsx": 'import React from \'react\';\nimport ReactDOM from \'react-dom/client\';\nimport App from \'./App\';\nReactDOM.createRoot(document.getElementById(\'root\')!).render(<React.StrictMode><App /></React.StrictMode>);\n',
-                    "package.json": json.dumps({"name": project_name, "version": "0.1.0", "private": True, "dependencies": {"react": "^18.2.0", "react-dom": "^18.2.0", "react-scripts": "5.0.1"}, "scripts": {"start": "react-scripts start", "build": "react-scripts build", "test": "react-scripts test"}}, indent=2),
-                    ".gitignore": "node_modules/\ndist/\nbuild/\n.env\n",
-                }
             else:
-                app_files = {
+                files = {
                     "README.md": f"# {project_name}\n\nA {framework} project.\n",
                     ".gitignore": "node_modules/\ndist/\n.env\n__pycache__/\n",
                 }
-            app_files[".github/workflows/ci.yml"] = gitflow_workflow
-            return app_files
+
+        # ── Call 2: Generate GitHub Actions workflow (raw YAML) ───────────────
+        if is_python:
+            install_cmd = "pip install -r requirements.txt"
+            test_cmd = "python -m pytest --tb=short || echo 'No tests yet'"
+            build_cmd = "python -m py_compile $(find . -name '*.py' | head -20) && echo 'Build OK'"
+            language_hint = "Python (pip/pytest)"
+        else:
+            install_cmd = "npm install"
+            test_cmd = "npm test"
+            build_cmd = "npm run build --if-present"
+            language_hint = "Node.js (npm)"
+
+        workflow_prompt = f"""Generate a GitHub Actions Gitflow CI/CD workflow YAML for a {framework} project named "{project_name}".
+
+Requirements:
+- Trigger on push to: develop, release/**, hotfix/**
+- Trigger on pull_request to: develop, main
+- Language: {language_hint}
+- Jobs (in order):
+  1. test: checkout, install ({install_cmd}), run tests ({test_cmd})
+  2. build: needs test, only on push events, checkout, install, build ({build_cmd})
+  3. deploy-dev: needs build, only when github.ref == refs/heads/develop, echo deploy message
+  4. deploy-staging: needs build, only when ref starts with refs/heads/release/, echo deploy message
+
+Return ONLY the raw YAML. No markdown fences. No explanation."""
+
+        workflow_yaml = None
+        try:
+            workflow_yaml = await self.call_claude(
+                prompt=workflow_prompt,
+                system="You are a DevOps engineer. Output ONLY valid GitHub Actions YAML. No markdown fences. No extra text.",
+                temperature=0.1
+            )
+            workflow_yaml = workflow_yaml.strip()
+            # Strip markdown fences if present
+            if workflow_yaml.startswith("```"):
+                workflow_yaml = workflow_yaml[workflow_yaml.index("\n") + 1:]
+            if workflow_yaml.endswith("```"):
+                workflow_yaml = workflow_yaml[:-3]
+            workflow_yaml = workflow_yaml.strip()
+            self.logger.info(f"LLM generated GitHub Actions workflow for {framework}/{project_name}")
+        except Exception as e:
+            self.logger.warning(f"LLM workflow generation failed ({e}), using hardcoded fallback")
+
+        # Fall back to programmatic workflow if LLM failed
+        if not workflow_yaml:
+            workflow_yaml = self._build_gitflow_workflow(framework, project_name)
+
+        files[".github/workflows/ci.yml"] = workflow_yaml
+        return files
 
     def _format_action_response(self, response: str, intent: str, action_result: Dict) -> str:
         """Format action results into the response string for the user."""
