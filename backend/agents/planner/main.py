@@ -31,7 +31,7 @@ from common.schemas.workflow import (
 app = FastAPI(
     title="Planner Agent",
     description="Orchestrates multi-step workflows by decomposing requests into tasks",
-    version="1.0.0"
+    version=__version__
 )
 
 app.add_middleware(

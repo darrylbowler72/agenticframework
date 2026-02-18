@@ -8,10 +8,20 @@ Provides standardized GitHub API access for all agents.
 import os
 import json
 import logging
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from github import Github, GithubException
+
+# Read version from VERSION file (copied into container at /VERSION)
+def _get_version() -> str:
+    for path in [Path("/VERSION"), Path(__file__).parent.parent.parent.parent / "VERSION"]:
+        if path.exists():
+            return path.read_text().strip()
+    return "1.0.0"
+
+MCP_VERSION = _get_version()
 
 # Configure logging
 logging.basicConfig(
@@ -23,7 +33,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="MCP GitHub Server",
     description="Model Context Protocol server for GitHub operations",
-    version="1.0.0"
+    version=MCP_VERSION
 )
 
 # Global GitHub client (initialized on first request)
@@ -478,7 +488,8 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "mcp-github-server",
-        "version": "1.0.5"
+        "agent": "mcp-github",
+        "version": MCP_VERSION
     }
 
 
@@ -489,7 +500,7 @@ async def mcp_info():
     """Get MCP server information and available tools."""
     return {
         "name": "github",
-        "version": "1.0.0",
+        "version": MCP_VERSION,
         "tools": [
             {
                 "name": "github.create_repository",

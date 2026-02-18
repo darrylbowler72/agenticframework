@@ -26,7 +26,7 @@ from migration.github_client import GitHubClient
 app = FastAPI(
     title="Migration Agent",
     description="Converts Jenkins pipelines to GitHub Actions workflows and integrates with Jenkins/GitHub",
-    version="1.0.5"
+    version=__version__
 )
 
 

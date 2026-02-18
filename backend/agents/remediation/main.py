@@ -25,7 +25,7 @@ from common.graphs import build_remediation_graph
 app = FastAPI(
     title="Remediation Agent",
     description="Automatically diagnoses and fixes CI/CD pipeline failures",
-    version="1.0.0"
+    version=__version__
 )
 
 app.add_middleware(

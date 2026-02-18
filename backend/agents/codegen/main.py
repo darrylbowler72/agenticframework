@@ -29,7 +29,7 @@ from common.mcp_client import GitHubMCPClient
 app = FastAPI(
     title="CodeGen Agent",
     description="Generates microservice code, infrastructure, and CI/CD configurations",
-    version="1.0.0"
+    version=__version__
 )
 
 app.add_middleware(

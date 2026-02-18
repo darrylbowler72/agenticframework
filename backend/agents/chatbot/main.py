@@ -29,7 +29,7 @@ from common.graphs import build_chatbot_graph
 app = FastAPI(
     title="DevOps at Your Service - Chatbot",
     description="Conversational interface for DevOps Agentic Framework",
-    version="1.0.0"
+    version=__version__
 )
 
 # Add CORS middleware
@@ -1228,6 +1228,7 @@ async def get_agents_health():
         "remediation": os.getenv('REMEDIATION_URL', 'http://remediation-agent:8002') + '/health',
         "chatbot": "healthy",
         "migration": os.getenv('MIGRATION_URL', 'http://migration-agent:8004') + '/health',
+        "mcp-github": os.getenv('MCP_GITHUB_URL', 'http://mcp-github:8100') + '/health',
     }
 
     health_status = {}

@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+ARG VERSION=1.1.0
+LABEL org.opencontainers.image.title="chatbot-agent" \
+      org.opencontainers.image.description="DevOps Agentic Framework - Chatbot Agent" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.source="https://github.com/darrylbowler72/agenticframework"
+
 WORKDIR /app
 
 # Install curl for health checks
