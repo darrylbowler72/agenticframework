@@ -265,7 +265,7 @@ class ChatbotAgent(BaseAgent):
         Returns:
             MCP response
         """
-        mcp_url = os.getenv('MCP_GITHUB_URL', 'http://dev-mcp-github.dev-agentic.local:8100')
+        mcp_url = os.getenv('MCP_GITHUB_URL', 'http://mcp-github:8100')
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
