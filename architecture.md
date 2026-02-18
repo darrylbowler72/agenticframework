@@ -34,27 +34,27 @@ The DevOps Agentic Framework is an autonomous, AI-driven platform designed to ac
 ```
                     localhost (host machine)
                        │
-     ┌─────────────────┼────────────────────────────────────┐
-     │  :8000     :8001 │  :8002     :8003      :8004       │
-     ▼            ▼     ▼      ▼           ▼          ▼     │
-┌────────┐ ┌────────┐ ┌────────┐ ┌──────────┐ ┌─────────┐  │
-│Planner │ │CodeGen │ │Remediat│ │ Chatbot  │ │Migration│  │
-│Agent   │ │Agent   │ │Agent   │ │ Agent    │ │Agent    │  │
-│:8000   │ │:8001   │ │:8002   │ │ :8003    │ │:8004    │  │
-└────┬───┘ └────┬───┘ └────┬───┘ └─────┬────┘ └────┬────┘  │
-     │          │          │           │            │       │
-     └──────────┼──────────┼───────────┼────────────┘       │
-                │          │           │                    │
-                ▼          ▼           ▼                    │
-        ┌──────────────┐ ┌────────────────────┐             │
-        │ MCP GitHub   │ │ Shared Volume      │             │
-        │ Server :8100 │ │ /data/             │             │
-        └──────────────┘ │   db/     (DynamoDB)│             │
-                         │   artifacts/ (S3)   │             │
-                         └────────────────────┘             │
-                                                            │
-                    agentic-local network (bridge)          │
-────────────────────────────────────────────────────────────┘
+     ┌─────────────────┼──────────────────────────────────────────┐
+     │  :8000     :8001 │  :8002     :8003      :8004    :8005    │
+     ▼            ▼     ▼      ▼           ▼          ▼       ▼  │
+┌────────┐ ┌────────┐ ┌────────┐ ┌──────────┐ ┌─────────┐ ┌──────────┐ │
+│Planner │ │CodeGen │ │Remediat│ │ Chatbot  │ │Migration│ │ Policy   │ │
+│Agent   │ │Agent   │ │Agent   │ │ Agent    │ │Agent    │ │ Agent    │ │
+│:8000   │ │:8001   │ │:8002   │ │ :8003    │ │:8004    │ │ :8005    │ │
+└────┬───┘ └────┬───┘ └────┬───┘ └─────┬────┘ └────┬────┘ └────┬─────┘ │
+     │          │          │           │            │           │      │
+     └──────────┼──────────┼───────────┼────────────┼───────────┘      │
+                │          │           │            │                  │
+                ▼          ▼           ▼            ▼                  │
+        ┌──────────────┐ ┌──────────────────────┐                      │
+        │ MCP GitHub   │ │ Shared Volume        │                      │
+        │ Server :8100 │ │ /data/               │                      │
+        └──────────────┘ │   db/      (DynamoDB) │                      │
+                         │   artifacts/    (S3)  │                      │
+                         └──────────────────────┘                      │
+                                                                       │
+                    agentic-local network (bridge)                     │
+───────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Services
@@ -67,6 +67,7 @@ The DevOps Agentic Framework is an autonomous, AI-driven platform designed to ac
 | Remediation Agent | `remediation-agent` | 8002 | Auto-fixes detected issues |
 | Chatbot Agent | `chatbot-agent` | 8003 | Conversational DevOps interface (web UI) |
 | Migration Agent | `migration-agent` | 8004 | Converts Jenkins pipelines to GitHub Actions |
+| Policy Agent | `policy-agent` | 8005 | Governance and compliance enforcement gate |
 
 ### Service Startup Order
 
@@ -77,6 +78,7 @@ mcp-github (health-checked)
     ├──> codegen-agent
     ├──> remediation-agent
     ├──> migration-agent
+    ├──> policy-agent
     │
     └──> chatbot-agent (starts last, depends on all others)
 ```
@@ -86,14 +88,16 @@ mcp-github (health-checked)
 Agents discover each other via **container DNS names** on the `agentic-local` bridge network:
 
 ```
-Chatbot → http://planner-agent:8000/workflows
-Chatbot → http://codegen-agent:8001/generate
-Chatbot → http://remediation-agent:8002/remediate
-Chatbot → http://migration-agent:8004/migration
-All     → http://mcp-github:8100/mcp/call
+Chatbot           → http://planner-agent:8000/workflows
+Chatbot           → http://codegen-agent:8001/generate
+Chatbot           → http://remediation-agent:8002/remediate
+Chatbot           → http://migration-agent:8004/migration
+Chatbot/CodeGen/
+Migration/Planner → http://policy-agent:8005/evaluate
+All               → http://mcp-github:8100/mcp/call
 ```
 
-Service URLs are configurable via environment variables (`PLANNER_URL`, `CODEGEN_URL`, etc.) for flexibility across deployment targets.
+Service URLs are configurable via environment variables (`PLANNER_URL`, `CODEGEN_URL`, `POLICY_URL`, etc.) for flexibility across deployment targets.
 
 ### Networking
 
@@ -181,7 +185,15 @@ from common.local_storage import (
 - Integrates with Jenkins servers and GitHub
 - Reads GitHub token from `GITHUB_TOKEN` environment variable
 
-#### 6. MCP GitHub Server (port 8100)
+#### 6. Policy Agent (port 8005)
+- Governance and compliance enforcement for all DevOps pipeline stages
+- Evaluates code, workflows, repositories, and deployment requests against configurable policy rules
+- Returns `approved: true/false` with violation details and auto-fix suggestions
+- Policies stored in `/data/db/local-policies.json` with per-type applicability
+- Called by other agents as a gate before pushing code or dispatching deployments
+- Default policies include: no hardcoded secrets, required repo files, workflow security rules, naming conventions
+
+#### 7. MCP GitHub Server (port 8100)
 - Model Context Protocol server for GitHub operations
 - Centralized GitHub credential management
 - Reads GitHub credentials from environment variables
@@ -192,7 +204,7 @@ from common.local_storage import (
 
 ### Overview
 
-All 5 agents use [LangGraph](https://github.com/langchain-ai/langgraph) StateGraph instances to define their workflows as explicit directed graphs. Each agent builds a compiled graph at initialization and invokes it per request via `await self.graph.ainvoke(state)`.
+All 6 agents use [LangGraph](https://github.com/langchain-ai/langgraph) StateGraph instances to define their workflows as explicit directed graphs. Each agent builds a compiled graph at initialization and invokes it per request via `await self.graph.ainvoke(state)`.
 
 ### Architecture
 
@@ -233,6 +245,7 @@ All 5 agents use [LangGraph](https://github.com/langchain-ai/langgraph) StateGra
 | `RemediationState` | Remediation | pipeline_id, logs, analysis, playbook, retry_count |
 | `MigrationState` | Migration | jenkinsfile_content, pipeline_data, workflow_yaml, cleaned_yaml |
 | `ChatState` | Chatbot | user_message, intent, action_result, final_response |
+| `PolicyState` | Policy | content_type, content, policies, violations, approved, severity_summary |
 
 ### Agent Graphs (`graphs.py`)
 
@@ -281,6 +294,17 @@ analyze_intent ──(action_needed)──> execute_action -> compose_response -
 compose_response -> END
 ```
 
+#### Policy Agent
+```
+load_policies -> scan_content -> evaluate_violations
+                                         |
+                   (violations & auto_fixable) -> suggest_fixes -> build_report -> END
+                                         |
+                   (violations, not fixable) ---------> build_report -> END
+                                         |
+                   (no violations) ------------------> build_report -> END
+```
+
 ### How Graphs Compose
 
 Graph nodes are thin wrappers that call existing agent methods. The agent instance is passed to the graph builder factory function:
@@ -321,10 +345,11 @@ Chatbot Agent (:8003)
     │
     ├─ Claude AI (intent analysis)
     │
-    ├─ If workflow request ──> Planner Agent (:8000)
-    ├─ If codegen request  ──> CodeGen Agent (:8001)
-    ├─ If fix request      ──> Remediation Agent (:8002)
-    ├─ If migration        ──> Migration Agent (:8004)
+    ├─ If workflow request ──> Planner Agent (:8000) ──> Policy (:8005) [deploy gate]
+    ├─ If codegen request  ──> CodeGen Agent (:8001) ──> Policy (:8005) [code check]
+    ├─ If fix request      ──> Remediation Agent (:8002) → Policy (:8005) [fix check]
+    ├─ If migration        ──> Migration Agent (:8004) ──> Policy (:8005) [workflow check]
+    ├─ If setup_project    ──> Policy Agent (:8005) [repo compliance]
     └─ If GitHub operation ──> MCP GitHub Server (:8100)
                                       │
                                       ▼
@@ -368,6 +393,7 @@ Agent → GitHubMCPClient → HTTP POST → MCP GitHub Server → GitHub API
 |------|-------------|
 | `github.create_repository` | Create a new GitHub repository |
 | `github.create_file` | Create a file in a repository |
+| `github.update_file` | Update an existing file (auto-fetches SHA, falls back to create) |
 | `github.create_branch` | Create a branch in a repository |
 | `github.get_workflow_run` | Get GitHub Actions workflow run details |
 | `github.list_repositories` | List user's repositories |
@@ -469,7 +495,8 @@ Response: 200 OK
 {
   "status": "healthy",
   "agent": "<agent-name>",
-  "version": "1.0.0"
+  "version": "1.1.0",
+  "timestamp": "<iso8601>"
 }
 ```
 
@@ -525,6 +552,42 @@ GET  /migration/jenkins/jobs
 POST /migration/jenkins/migrate-job
 ```
 
+### Policy Agent
+
+```
+POST /evaluate/code
+{
+  "content": "<source code>",
+  "context": { "repo_name": "my-service", "framework": "python" }
+}
+
+POST /evaluate/workflow
+{ "content": "<github actions yaml>", "context": {} }
+
+POST /evaluate/repository
+{ "content": "<list of file paths>", "context": { "repo_name": "my-repo" } }
+
+POST /evaluate/deployment
+{ "content": "", "context": { "branch": "release/1.2.0", "environment": "staging" } }
+
+GET  /policies
+POST /policies   { "policy_id": "...", "name": "...", "applies_to": [...], ... }
+GET  /policies/{policy_id}
+DELETE /policies/{policy_id}
+
+Response (all /evaluate/* endpoints):
+{
+  "approved": true,
+  "severity_summary": { "critical": 0, "high": 0, "medium": 1, "low": 0 },
+  "violations": [
+    { "rule": "required-repo-files", "severity": "medium",
+      "detail": "LICENSE file is missing", "auto_fix": false }
+  ],
+  "suggested_fixes": [],
+  "report": { ... }
+}
+```
+
 ### MCP GitHub Server
 
 ```
@@ -553,16 +616,18 @@ GET /health
   /remediation/           # Auto-remediation
   /chatbot/               # Conversational interface (+ web UI)
   /migration/             # Jenkins to GitHub Actions migration
+  /policy/                # Governance and compliance enforcement (port 8005)
   /common/                # Shared utilities
     agent_base.py          # BaseAgent class (LOCAL_MODE logic)
     local_storage.py       # Local replacements for AWS services
-    graph_states.py        # LangGraph TypedDict state classes
-    graphs.py              # LangGraph graph builder functions
-    version.py             # Version management
+    graph_states.py        # LangGraph TypedDict state classes (WorkflowState, ChatState, etc.)
+    graphs.py              # LangGraph graph builder functions (build_*_graph)
+    version.py             # Version management (reads /VERSION file)
 /backend/mcp-server/
   /github/                # MCP GitHub server
-/backend/Dockerfile.*     # One Dockerfile per service
+/backend/Dockerfile.*     # One Dockerfile per service (accepts --build-arg VERSION=x.y.z)
 /docker-compose.local.yml # Local Podman/Docker compose
+/VERSION                  # Single source of truth for version number (current: 1.1.0)
 /scripts/
   run-local.sh            # Launcher (up/down/logs/restart/status)
 /.env.local.template      # Template for API keys
@@ -598,12 +663,18 @@ python -m uvicorn agents.chatbot.main:app --host 0.0.0.0 --port 8003 --reload
 
 1. Create `backend/agents/<name>/main.py` extending `BaseAgent`
 2. Implement `process_task()` method
-3. Define a state class in `graph_states.py` and a graph builder in `graphs.py`
-4. Build the compiled graph in `__init__()` and invoke via `self.graph.ainvoke(state)` per request
-5. Add FastAPI routes and health check at `/health`
-6. Create `backend/Dockerfile.<name>`
-7. Add service to `docker-compose.local.yml`
-8. Update chatbot agent endpoints if the new agent should be accessible via chat
+3. Define a `TypedDict` state class in `graph_states.py`
+4. Add a `build_<name>_graph(agent)` builder in `graphs.py`
+5. Build the compiled graph in `__init__()`: `self.graph = build_<name>_graph(self)`
+6. Invoke per request: `result = await self.graph.ainvoke({...})`
+7. Add FastAPI routes and health check at `/health` returning `{"status", "agent", "version", "timestamp"}`
+8. Create `backend/Dockerfile.<name>` — copy the `Dockerfile.remediation` pattern, update port + CMD
+9. Add service to `docker-compose.local.yml`
+10. Update `CLAUDE.md`, `README.md`, and `architecture.md` service lists and diagrams
+11. Import `from common.version import __version__` — pass to FastAPI constructor and `/health`
+12. Add env var discovery URL (e.g. `POLICY_URL`) to chatbot and any other callers
+
+See the **Policy Agent** section in `CLAUDE.md` for a complete worked example with use cases and implementation checklist.
 
 ### Container Build Context
 
@@ -656,5 +727,5 @@ To reset all data: `bash scripts/run-local.sh down` (removes volumes)
 
 ---
 
-*Last Updated: 2026-02-17*
-*Version: 2.0.0 (local-podman)*
+*Last Updated: 2026-02-18*
+*Version: 1.1.0 (local-podman)*

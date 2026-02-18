@@ -9,14 +9,14 @@ An autonomous, AI-powered DevOps platform that accelerates software delivery thr
 cp .env.local.template .env
 # Edit .env: add your ANTHROPIC_API_KEY and GITHUB_TOKEN
 
-# 2. Start all 6 services
+# 2. Start all 7 services
 bash scripts/run-local.sh up
 
 # 3. Open the chatbot UI
 open http://localhost:8003
 ```
 
-That's it. All 6 AI agents are now running locally.
+That's it. All 7 AI agents are now running locally.
 
 ## Services
 
@@ -27,6 +27,7 @@ That's it. All 6 AI agents are now running locally.
 | CodeGen Agent | 8001 | http://localhost:8001/health | Generates microservices and infrastructure code |
 | Remediation Agent | 8002 | http://localhost:8002/health | Auto-fixes detected issues |
 | Migration Agent | 8004 | http://localhost:8004/health | Converts Jenkins pipelines to GitHub Actions |
+| Policy Agent | 8005 | http://localhost:8005/health | Enforces governance policies and compliance gates |
 | MCP GitHub Server | 8100 | http://localhost:8100/health | GitHub operations via Model Context Protocol |
 
 ## What You Can Do
@@ -39,6 +40,7 @@ Open http://localhost:8003 and ask:
 - "Generate a REST API with PostgreSQL"
 - "Migrate my Jenkins pipeline to GitHub Actions"
 - "List my GitHub repositories"
+- "Create a repo called my-service and bootstrap it with a Python web app and gitflow branching"
 
 ### Use the APIs Directly
 
@@ -78,6 +80,16 @@ curl -X POST http://localhost:8004/migrate \
   }'
 ```
 
+#### Evaluate Code Against Policy
+```bash
+curl -X POST http://localhost:8005/evaluate/code \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "API_KEY = \"sk-abc123\"\ndb_password = \"secret\"",
+    "context": {"repo_name": "my-service", "framework": "python"}
+  }'
+```
+
 #### Check Health
 ```bash
 curl http://localhost:8000/health
@@ -111,10 +123,13 @@ User Browser → Chatbot (:8003) → Claude AI (intent analysis)
                    ├──> CodeGen Agent (:8001)
                    ├──> Remediation Agent (:8002)
                    ├──> Migration Agent (:8004)
+                   ├──> Policy Agent (:8005)  ← governance & compliance gate
                    └──> MCP GitHub Server (:8100) → GitHub API
 ```
 
 All services run as containers on a shared bridge network (`agentic-local`). Agents discover each other via container DNS names.
+
+The **Policy Agent** acts as a cross-cutting concern: CodeGen, Chatbot, Migration, and Planner agents all call it to validate content before committing it — blocking hardcoded secrets, enforcing required files, validating workflow YAML, and gating deployments.
 
 ### LangGraph Orchestration
 
@@ -167,7 +182,8 @@ This provides a single point for GitHub credential management and a standardized
 ## Key Capabilities
 
 - **AI Scaffolding**: Generates repos, microservices, IaC, CI/CD pipelines automatically
-- **Multi-Agent System**: 6 specialized agents powered by Claude AI work together
+- **Multi-Agent System**: 7 specialized agents powered by Claude AI work together
+- **Policy Enforcement**: Governance agent gates code, workflows, repositories, and deployments against configurable compliance rules
 - **Pipeline Migration**: Converts Jenkins pipelines to GitHub Actions workflows (LLM-powered)
 - **Conversational Interface**: Natural language chatbot for all DevOps operations
 - **MCP Integration**: Model Context Protocol for standardized GitHub operations
@@ -182,6 +198,7 @@ This provides a single point for GitHub credential management and a standardized
   /remediation/           # Auto-remediation
   /chatbot/               # Conversational interface (+ web UI)
   /migration/             # Jenkins to GitHub Actions migration
+  /policy/                # Governance and compliance enforcement
   /common/                # Shared utilities (BaseAgent, local_storage, LangGraph)
 /backend/mcp-server/
   /github/                # MCP GitHub server
@@ -219,9 +236,13 @@ pytest -v
 
 1. Create `backend/agents/<name>/main.py` extending `BaseAgent`
 2. Implement `process_task()` method
-3. Add FastAPI routes and `/health` endpoint
-4. Create `backend/Dockerfile.<name>`
-5. Add service to `docker-compose.local.yml`
+3. Add a `TypedDict` state class to `backend/agents/common/graph_states.py`
+4. Add a `build_<name>_graph(agent)` factory to `backend/agents/common/graphs.py`
+5. Add FastAPI routes and `/health` endpoint
+6. Create `backend/Dockerfile.<name>`
+7. Add service to `docker-compose.local.yml`
+
+See the **Policy Agent** section in `CLAUDE.md` for a complete worked example and implementation checklist.
 
 ## Monitoring
 
