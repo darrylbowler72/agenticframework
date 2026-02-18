@@ -416,34 +416,68 @@ dist/
 Thumbs.db
 ''',
 
-            '.gitlab-ci.yml': '''stages:
-  - test
-  - build
-  - deploy
+            '.github/workflows/ci.yml': f'''name: Gitflow CI/CD
 
-test:
-  stage: test
-  image: python:3.11
-  script:
-    - pip install -r requirements.txt
-    - pip install pytest pytest-cov
-    - pytest --cov
+on:
+  push:
+    branches:
+      - develop
+      - 'release/**'
+      - 'hotfix/**'
+  pull_request:
+    branches:
+      - develop
+      - main
 
-build:
-  stage: build
-  image: docker:latest
-  services:
-    - docker:dind
-  script:
-    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA .
-    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      - name: Run tests
+        run: pytest --cov --cov-report=term-missing
 
-deploy:
-  stage: deploy
-  script:
-    - echo "Deploying to environment"
-  only:
-    - main
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build Docker image
+        run: docker build -t {service_name}:${{{{ github.sha }}}} .
+
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    steps:
+      - name: Deploy
+        run: |
+          echo "Deploying {service_name} to development"
+          echo "Commit: ${{{{ github.sha }}}}"
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/heads/release/')
+    steps:
+      - name: Deploy
+        run: |
+          echo "Deploying {service_name} to staging"
+          echo "Release: ${{{{ github.ref_name }}}}"
 ''',
 
             'k8s/deployment.yaml': f'''apiVersion: apps/v1

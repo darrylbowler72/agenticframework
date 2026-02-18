@@ -670,7 +670,7 @@ Analyze the intent and provide your response in JSON format."""
                 for attempt in range(3):
                     try:
                         push_result = await self.call_mcp_github(
-                            "github.create_file",
+                            "github.update_file",
                             {
                                 "repo_name": repo_name,
                                 "file_path": file_path,
@@ -707,32 +707,86 @@ Analyze the intent and provide your response in JSON format."""
 
     async def _generate_project_template(self, framework: str, project_name: str) -> Dict[str, str]:
         """Generate boilerplate project files for a given framework using Claude."""
+        gitflow_workflow = f"""name: Gitflow CI/CD
+
+on:
+  push:
+    branches:
+      - develop
+      - 'release/**'
+      - 'hotfix/**'
+  pull_request:
+    branches:
+      - develop
+      - main
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install dependencies
+        run: npm install
+      - name: Run tests
+        run: npm test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install dependencies
+        run: npm install
+      - name: Build
+        run: npm run build --if-present
+
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    steps:
+      - name: Deploy
+        run: echo "Deploying {project_name} to development - commit ${{{{ github.sha }}}}"
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/heads/release/')
+    steps:
+      - name: Deploy
+        run: echo "Deploying {project_name} to staging - release ${{{{ github.ref_name }}}}"
+"""
+
         prompt = f"""Generate boilerplate files for a new {framework} project named "{project_name}".
 
 Return ONLY a valid JSON object where keys are file paths and values are file contents.
+All string values MUST use only double quotes and properly escape any special characters.
 Do NOT include node_modules, lock files, or binary files.
-Keep files minimal but functional - enough to run the project after npm install.
-
-For example:
-{{"package.json": "...", "src/index.ts": "...", "README.md": "..."}}
+Keep files minimal but functional.
 
 Framework-specific requirements:
-- Angular: Include angular.json, tsconfig.json, package.json, src/main.ts, src/app/app.component.ts, src/app/app.module.ts, src/index.html, .gitignore
-- React: Include package.json, tsconfig.json (if TypeScript), src/index.tsx, src/App.tsx, public/index.html, .gitignore
-- Next.js: Include package.json, next.config.js, tsconfig.json, src/app/page.tsx, src/app/layout.tsx, .gitignore
-- Other: Include package.json, appropriate config files, src/index file, .gitignore
+- nodejs/express: Include src/index.js, package.json (with express dependency, start script, and test script that uses "echo 'No tests yet' && exit 0"), .gitignore
+- react: Include src/App.tsx, src/index.tsx, public/index.html, package.json (test script must be "echo 'No tests yet' && exit 0"), tsconfig.json, .gitignore
+- angular: Include src/main.ts, src/app/app.component.ts, src/app/app.module.ts, src/index.html, package.json, angular.json, tsconfig.json, .gitignore
+- fastapi/python: Include main.py, requirements.txt, .gitignore
+- Other: Include appropriate entry file, dependency file, .gitignore
 
-Include a .github/workflows/ci.yml with a basic CI pipeline for the framework.
-Return ONLY the JSON object, no markdown fences or explanation."""
+Do NOT include a .github/workflows file - that will be added separately.
+Return ONLY the JSON object. No markdown fences. No explanation."""
 
         try:
             response = await self.call_claude(
                 prompt=prompt,
-                system="You are a code generator. Return ONLY valid JSON with no markdown formatting.",
-                temperature=0.3
+                system="You are a code generator. Return ONLY a valid JSON object. No markdown. No extra text.",
+                temperature=0.2
             )
 
-            # Strip markdown fences if present
+            # Strip any markdown fences
             cleaned = response.strip()
             if cleaned.startswith("```"):
                 first_newline = cleaned.index("\n")
@@ -741,20 +795,50 @@ Return ONLY the JSON object, no markdown fences or explanation."""
                 cleaned = cleaned[:-3]
             cleaned = cleaned.strip()
 
-            return json.loads(cleaned)
+            files = json.loads(cleaned)
+            # Strip any leading project-name prefix Claude may add to paths
+            stripped = {}
+            for path, content in files.items():
+                # Remove leading "<project_name>/" prefix if present
+                if path.startswith(f"{project_name}/"):
+                    path = path[len(project_name) + 1:]
+                stripped[path] = content
+            # Ensure package.json test script exits 0 (no tests defined yet)
+            if "package.json" in stripped:
+                try:
+                    pkg = json.loads(stripped["package.json"])
+                    if pkg.get("scripts", {}).get("test", "").startswith("echo \"Error"):
+                        pkg["scripts"]["test"] = "echo 'No tests yet' && exit 0"
+                        stripped["package.json"] = json.dumps(pkg, indent=2)
+                except (json.JSONDecodeError, KeyError):
+                    pass
+            # Always inject the gitflow workflow (overwrites any Claude-generated one)
+            stripped[".github/workflows/ci.yml"] = gitflow_workflow
+            return stripped
+
         except (json.JSONDecodeError, ValueError) as e:
             self.logger.error(f"Failed to parse template response: {e}")
-            # Return minimal fallback files
-            return {
-                "README.md": f"# {project_name}\n\nA {framework} project.\n",
-                ".gitignore": "node_modules/\ndist/\n.env\n",
-                "package.json": json.dumps({
-                    "name": project_name,
-                    "version": "0.1.0",
-                    "private": True,
-                    "description": f"A {framework} project"
-                }, indent=2)
-            }
+            # Return hardcoded fallback based on framework
+            if framework in ("nodejs", "express", "node"):
+                app_files = {
+                    "src/index.js": f'const express = require(\'express\');\nconst app = express();\nconst PORT = process.env.PORT || 3000;\n\napp.use(express.json());\n\napp.get(\'/\', (req, res) => res.json({{ service: \'{project_name}\', status: \'running\' }}));\napp.get(\'/health\', (req, res) => res.json({{ status: \'healthy\' }}));\n\napp.listen(PORT, () => console.log(`Server on port ${{PORT}}`));\n',
+                    "package.json": json.dumps({"name": project_name, "version": "1.0.0", "main": "src/index.js", "scripts": {"start": "node src/index.js", "test": "echo 'No tests yet' && exit 0"}, "dependencies": {"express": "^4.18.2"}}, indent=2),
+                    ".gitignore": "node_modules/\n.env\ndist/\n",
+                }
+            elif framework in ("react",):
+                app_files = {
+                    "src/App.tsx": f'import React from \'react\';\nexport default function App() {{\n  return <div><h1>{project_name}</h1></div>;\n}}\n',
+                    "src/index.tsx": 'import React from \'react\';\nimport ReactDOM from \'react-dom/client\';\nimport App from \'./App\';\nReactDOM.createRoot(document.getElementById(\'root\')!).render(<React.StrictMode><App /></React.StrictMode>);\n',
+                    "package.json": json.dumps({"name": project_name, "version": "0.1.0", "private": True, "dependencies": {"react": "^18.2.0", "react-dom": "^18.2.0", "react-scripts": "5.0.1"}, "scripts": {"start": "react-scripts start", "build": "react-scripts build", "test": "react-scripts test"}}, indent=2),
+                    ".gitignore": "node_modules/\ndist/\nbuild/\n.env\n",
+                }
+            else:
+                app_files = {
+                    "README.md": f"# {project_name}\n\nA {framework} project.\n",
+                    ".gitignore": "node_modules/\ndist/\n.env\n__pycache__/\n",
+                }
+            app_files[".github/workflows/ci.yml"] = gitflow_workflow
+            return app_files
 
     def _format_action_response(self, response: str, intent: str, action_result: Dict) -> str:
         """Format action results into the response string for the user."""

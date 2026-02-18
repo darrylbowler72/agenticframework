@@ -126,6 +126,8 @@ async def mcp_call(request: MCPRequest) -> MCPResponse:
             result = await create_repository(params)
         elif method == "github.create_file":
             result = await create_file(params)
+        elif method == "github.update_file":
+            result = await update_file(params)
         elif method == "github.create_branch":
             result = await create_branch(params)
         elif method == "github.get_workflow_run":
@@ -233,6 +235,62 @@ async def create_file(params: Dict[str, Any]) -> Dict[str, Any]:
 
     except GithubException as e:
         logger.error(f"GitHub API error creating file: {e}")
+        raise HTTPException(status_code=e.status, detail=e.data.get('message', str(e)))
+
+
+async def update_file(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Update an existing file in a GitHub repository."""
+    gh_client, owner = get_github_client()
+
+    repo_name = params.get('repo_name')
+    file_path = params.get('file_path')
+    content = params.get('content')
+    message = params.get('message', f'Update {file_path}')
+    branch = params.get('branch', 'main')
+
+    if not all([repo_name, file_path, content]):
+        raise ValueError("repo_name, file_path, and content are required")
+
+    try:
+        repo = gh_client.get_user().get_repo(repo_name) if '/' not in repo_name else gh_client.get_repo(repo_name)
+
+        # Get the current file SHA (required by GitHub API for updates)
+        try:
+            existing = repo.get_contents(file_path, ref=branch)
+            sha = existing.sha
+        except GithubException:
+            # File doesn't exist - fall back to create
+            result = repo.create_file(
+                path=file_path,
+                message=message,
+                content=content,
+                branch=branch
+            )
+            logger.info(f"Created (new) file {file_path} in {repo_name}")
+            return {
+                "path": file_path,
+                "sha": result['content'].sha,
+                "html_url": result['content'].html_url
+            }
+
+        result = repo.update_file(
+            path=file_path,
+            message=message,
+            content=content,
+            sha=sha,
+            branch=branch
+        )
+
+        logger.info(f"Updated file {file_path} in {repo_name}")
+
+        return {
+            "path": file_path,
+            "sha": result['content'].sha,
+            "html_url": result['content'].html_url
+        }
+
+    except GithubException as e:
+        logger.error(f"GitHub API error updating file: {e}")
         raise HTTPException(status_code=e.status, detail=e.data.get('message', str(e)))
 
 
@@ -474,6 +532,17 @@ async def mcp_info():
                 "description": "Get repository details",
                 "parameters": {
                     "repo_name": {"type": "string", "required": True}
+                }
+            },
+            {
+                "name": "github.update_file",
+                "description": "Update an existing file in a repository (fetches SHA automatically)",
+                "parameters": {
+                    "repo_name": {"type": "string", "required": True},
+                    "file_path": {"type": "string", "required": True},
+                    "content": {"type": "string", "required": True},
+                    "message": {"type": "string", "required": False},
+                    "branch": {"type": "string", "required": False}
                 }
             },
             {
