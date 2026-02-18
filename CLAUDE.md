@@ -10,14 +10,15 @@ DevOps Agentic Framework — An autonomous, AI-powered DevOps platform that runs
 
 ### Multi-Agent System
 
-The framework consists of 6 specialized AI agents running as local containers:
+The framework consists of 7 specialized AI agents running as local containers:
 
 1. **Planner Agent** (port 8000) — Orchestrates multi-step workflows
 2. **CodeGen Agent** (port 8001) — Generates microservices and infrastructure code
 3. **Remediation Agent** (port 8002) — Auto-fixes detected issues in code/workflows
 4. **Chatbot Agent** (port 8003) — Natural language interface for DevOps operations
 5. **Migration Agent** (port 8004) — Converts Jenkins pipelines to GitHub Actions
-6. **MCP GitHub Server** (port 8100) — Model Context Protocol server for GitHub operations
+6. **Policy Agent** (port 8005) — Enforces governance policies and compliance gates
+7. **MCP GitHub Server** (port 8100) — Model Context Protocol server for GitHub operations
 
 All agents inherit from `BaseAgent` (`backend/agents/common/agent_base.py`) which provides:
 - Claude AI API client (via `anthropic` library)
@@ -94,6 +95,7 @@ bash scripts/run-local.sh up
 # CodeGen:           http://localhost:8001/health
 # Remediation:       http://localhost:8002/health
 # Migration:         http://localhost:8004/health
+# Policy:            http://localhost:8005/health
 # MCP GitHub:        http://localhost:8100/health
 
 # 4. Management
@@ -116,6 +118,7 @@ podman.exe build --build-arg VERSION=1.1.0 -f backend/Dockerfile.planner      -t
 podman.exe build --build-arg VERSION=1.1.0 -f backend/Dockerfile.codegen      -t codegen-agent      .
 podman.exe build --build-arg VERSION=1.1.0 -f backend/Dockerfile.remediation  -t remediation-agent  .
 podman.exe build --build-arg VERSION=1.1.0 -f backend/Dockerfile.migration    -t migration-agent    .
+podman.exe build --build-arg VERSION=1.1.0 -f backend/Dockerfile.policy       -t policy-agent       .
 podman.exe build --build-arg VERSION=1.1.0 -f backend/Dockerfile.chatbot      -t chatbot-agent      .
 
 # Create network and volume (first time only)
@@ -137,6 +140,7 @@ podman.exe run -d --name planner-agent     $NET $VOL     -p 8000:8000 $ENV_ARGS 
 podman.exe run -d --name codegen-agent     $NET $VOL     -p 8001:8001 $ENV_ARGS codegen-agent
 podman.exe run -d --name remediation-agent $NET $VOL     -p 8002:8002 $ENV_ARGS remediation-agent
 podman.exe run -d --name migration-agent   $NET $VOL     -p 8004:8004 $ENV_ARGS migration-agent
+podman.exe run -d --name policy-agent      $NET $VOL     -p 8005:8005 $ENV_ARGS policy-agent
 podman.exe run -d --name chatbot-agent     $NET $VOL     -p 8003:8003 $ENV_ARGS chatbot-agent
 ```
 
@@ -207,6 +211,7 @@ Agent workflows are defined as LangGraph StateGraph instances:
 | `build_chatbot_graph` | analyze_intent → [execute_action] → compose_response | Skips execute_action if `action_needed=false` |
 | `build_remediation_graph` | fetch_logs → analyze_failure → find_playbook → execute_playbook → verify → notify | Retries execute_playbook up to 3 times |
 | `build_codegen_graph` | generate_service → generate_common_files → store_artifacts | Linear pipeline |
+| `build_policy_graph` | load_policies → scan_content → evaluate_violations → [suggest_fixes] → build_report | Suggests fixes for auto-fixable violations only |
 
 ### Service Discovery
 
@@ -215,9 +220,10 @@ Agents find each other via container DNS names on the `agentic-local` network:
 - `http://codegen-agent:8001`
 - `http://remediation-agent:8002`
 - `http://migration-agent:8004`
+- `http://policy-agent:8005`
 - `http://mcp-github:8100`
 
-Configurable via env vars: `PLANNER_URL`, `CODEGEN_URL`, `REMEDIATION_URL`, `MIGRATION_URL`, `MCP_GITHUB_URL`
+Configurable via env vars: `PLANNER_URL`, `CODEGEN_URL`, `REMEDIATION_URL`, `MIGRATION_URL`, `POLICY_URL`, `MCP_GITHUB_URL`
 
 ### Secrets via Environment Variables
 
@@ -352,12 +358,338 @@ The Migration Agent converts Jenkins pipelines to GitHub Actions workflows:
 | `GET` | `/migration/integration/test` | Test Jenkins→GitHub integration end-to-end |
 | `GET` | `/health` | Health check |
 
+#### Policy Agent (:8005)
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/evaluate` | Evaluate content (code, workflow, repo, deployment) against all applicable policies |
+| `POST` | `/evaluate/code` | Validate generated code for security and quality violations |
+| `POST` | `/evaluate/workflow` | Validate a GitHub Actions workflow YAML against policy |
+| `POST` | `/evaluate/repository` | Validate repository structure and required compliance files |
+| `POST` | `/evaluate/deployment` | Gate a deployment request; returns approve/block decision |
+| `GET`  | `/policies` | List all stored policy rules |
+| `POST` | `/policies` | Create or update a policy rule |
+| `GET`  | `/policies/{policy_id}` | Get a specific policy rule by ID |
+| `DELETE` | `/policies/{policy_id}` | Remove a policy rule |
+| `GET`  | `/health` | Health check |
+
 #### MCP GitHub Server (:8100)
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/mcp/call` | Execute an MCP operation (see MCP Operations table) |
 | `GET` | `/mcp/info` | List available tools and their parameters |
 | `GET` | `/health` | Health check |
+
+## Policy Agent — Design, Use Cases, and Implementation Guide
+
+### Purpose
+
+The Policy Agent (port 8005) is a governance and compliance layer that evaluates content at every stage of the DevOps pipeline. It acts as a configurable gate that other agents can call before pushing code, creating repositories, generating workflows, or dispatching deployments.
+
+> **Status**: Documented design — ready to implement. See [Agent Implementation Pattern](#agent-implementation-pattern) for code patterns.
+
+### Architecture
+
+```
+Chatbot / CodeGen / Migration / Planner / Remediation
+                    |
+          POST /evaluate/<content-type>
+                    |
+             Policy Agent (:8005)
+                    |
+          LangGraph Policy Graph
+                    |
+    +-----------+------------------+
+    |           |                  |
+  APPROVE     WARN            BLOCK
+    |           |                  |
+    v           v                  v
+ caller       caller+log       caller + reason
+continues    continues         returns 422
+```
+
+### LangGraph Policy Graph
+
+**File**: `backend/agents/common/graphs.py` → `build_policy_graph(agent)`
+**State**: `backend/agents/common/graph_states.py` → `PolicyState`
+
+```
+load_policies
+     |
+scan_content (Claude analyses content against loaded policy rules)
+     |
+evaluate_violations (classify: critical/high/medium/low, auto-fixable?)
+     |
+     +-- (violations & auto_fixable=True) --> suggest_fixes --> build_report --> END
+     |
+     +-- (violations & auto_fixable=False) -----------------> build_report --> END
+     |
+     +-- (no violations) ------------------------------------> build_report --> END
+```
+
+| Node | Method | Description |
+|------|--------|-------------|
+| `load_policies` | `_load_policies(content_type)` | Read applicable policies from `/data/db/local-policies.json` |
+| `scan_content` | `_scan_content(content, policies)` | Use Claude to find violations against each rule |
+| `evaluate_violations` | `_evaluate_violations(scan_results)` | Classify severity, set `approved` flag |
+| `suggest_fixes` | `_suggest_fixes(violations)` | Claude generates concrete code-level fix suggestions |
+| `build_report` | `_build_report(state)` | Produce structured JSON report with decision, violations, fixes |
+
+### PolicyState TypedDict
+
+```python
+class PolicyState(TypedDict, total=False):
+    # Input
+    content_type: str          # "code" | "workflow" | "repository" | "deployment"
+    content: str               # The raw content to evaluate
+    context: Dict[str, Any]    # repo_name, framework, branch, caller_agent, etc.
+    policy_ids: Optional[List[str]]  # Specific policies to apply, or None for all
+
+    # Policy loading
+    policies: List[Dict[str, Any]]
+
+    # Scanning
+    scan_results: List[Dict[str, Any]]   # Raw findings from Claude
+
+    # Evaluation
+    violations: List[Dict[str, Any]]     # Categorised violations with severity
+    auto_fixable: bool
+
+    # Fix suggestions
+    suggested_fixes: List[Dict[str, Any]]
+
+    # Output
+    approved: bool             # True = APPROVE, False = BLOCK
+    severity_summary: Dict[str, int]  # {"critical": 0, "high": 1, "medium": 2, "low": 0}
+    report: Dict[str, Any]
+    error: Optional[str]
+```
+
+### Policy Storage Format
+
+Policies are stored in `/data/db/local-policies.json` (via `LocalDynamoDB` table `local-policies`).
+
+```json
+{
+  "policy_id": "no-hardcoded-secrets",
+  "name": "No Hardcoded Secrets",
+  "description": "Code and workflows must not contain API keys, passwords, or tokens.",
+  "applies_to": ["code", "workflow"],
+  "severity": "critical",
+  "auto_fix": false,
+  "blocking": true,
+  "enabled": true,
+  "rules": [
+    "No string literals matching common API key patterns (e.g. sk-, ghp_, AKIA)",
+    "No variable assignments with names containing 'password', 'secret', 'token', 'key' and hardcoded string values",
+    "No connection strings with embedded credentials"
+  ],
+  "remediation_hint": "Use environment variables or GitHub Secrets instead of hardcoded values."
+}
+```
+
+**Key fields**:
+- `applies_to`: Which `content_type` values trigger this policy
+- `blocking`: If `true` and severity is `critical`/`high`, the request is rejected (`approved=False`)
+- `auto_fix`: Whether the `suggest_fixes` node runs for violations of this policy
+- `rules`: Human-readable rules passed verbatim to Claude for analysis
+
+### Default Policies (Seed Data)
+
+The agent ships with these default policies pre-loaded in `/data/db/local-policies.json`:
+
+| Policy ID | Applies To | Severity | Blocking | Description |
+|-----------|-----------|----------|----------|-------------|
+| `no-hardcoded-secrets` | code, workflow | critical | yes | No API keys, passwords, tokens in content |
+| `required-repo-files` | repository | medium | no | README.md, .gitignore, LICENSE must exist |
+| `workflow-has-checkout` | workflow | high | yes | GitHub Actions workflow must use `actions/checkout` |
+| `workflow-no-sudo` | workflow | medium | no | Workflows should not run arbitrary `sudo` commands |
+| `naming-conventions` | repository | low | no | Repo names must be kebab-case, no spaces |
+| `branch-protection-required` | repository | medium | no | main/develop branches should have protection rules |
+| `dependency-pinning` | workflow | medium | no | Action versions must be pinned (no `@main` or `@latest`) |
+
+### Agent Implementation Checklist
+
+When implementing `backend/agents/policy/main.py`:
+
+1. `class PolicyAgent(BaseAgent)` — extend `BaseAgent("policy")`
+2. `FastAPI(title="Policy Agent", version=__version__)` — import `from common.version import __version__`
+3. `self.graph = build_policy_graph(self)` in `__init__()`
+4. Implement `process_task()` — accept `{"content_type", "content", "context"}`, invoke graph
+5. Implement `_load_policies(content_type)` — filter JSON db by `applies_to`
+6. Implement `_scan_content(content, policies)` — single `call_claude()` call with rules in system prompt
+7. Implement `_evaluate_violations(scan_results)` — classify, count by severity, set `approved`
+8. Implement `_suggest_fixes(violations)` — `call_claude()` to produce code-level suggestions
+9. Implement `_build_report(state)` — return structured JSON
+10. Seed default policies on first startup (check if `/data/db/local-policies.json` exists)
+11. Expose all endpoints listed in [API Reference](#policy-agent-8005)
+12. `/health` must return `{"status": "healthy", "agent": "policy", "version": __version__, "timestamp": ...}`
+
+**Dockerfile**: `backend/Dockerfile.policy` — follow the same pattern as `Dockerfile.remediation`
+**Port**: 8005
+**Container name**: `policy-agent`
+**Env var**: `POLICY_URL` (default: `http://policy-agent:8005`)
+
+### Calling the Policy Agent from Other Agents
+
+```python
+import httpx
+
+async def check_policy(content_type: str, content: str, context: dict) -> dict:
+    policy_url = os.getenv("POLICY_URL", "http://policy-agent:8005")
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{policy_url}/evaluate/{content_type}",
+            json={"content": content, "context": context}
+        )
+        return resp.json()
+    # Returns: {"approved": bool, "severity_summary": {...}, "violations": [...], "suggested_fixes": [...]}
+```
+
+### Use Cases
+
+#### UC-1: Prevent Hardcoded Secrets in Generated Code
+
+**Trigger**: CodeGen Agent finishes `_enhance_with_ai()` and before `push_to_repo()`
+**Actor**: `codegen-agent` calls `POST /evaluate/code`
+**Input**: Generated Python/Node.js service files
+**Policy**: `no-hardcoded-secrets` (critical, blocking)
+**Flow**:
+1. CodeGen calls Policy Agent with the generated file contents
+2. Claude scans for API key patterns, password variables, connection strings
+3. If any found: Policy Agent returns `approved=False`, violation list, and env-var fix suggestions
+4. CodeGen logs the violation, skips pushing to GitHub, returns an error to the caller
+5. If none found: `approved=True`, CodeGen proceeds to push files to GitHub
+
+**Example violation**:
+```json
+{"rule": "no-hardcoded-secrets", "severity": "critical", "file": "src/config.py",
+ "line": 12, "match": "API_KEY = 'sk-abc123'",
+ "fix": "Replace with: API_KEY = os.getenv('API_KEY')"}
+```
+
+---
+
+#### UC-2: Enforce Required Repository Files After Bootstrap
+
+**Trigger**: Chatbot Agent completes `setup_project` (after files are pushed to GitHub)
+**Actor**: `chatbot-agent` calls `POST /evaluate/repository`
+**Input**: List of file paths pushed to GitHub + repo name
+**Policy**: `required-repo-files` (medium, non-blocking — warns but continues)
+**Flow**:
+1. Chatbot calls Policy Agent with `{"files": [...], "repo_name": "web-frontend"}`
+2. Policy Agent checks that `README.md`, `.gitignore`, `LICENSE` are present
+3. Missing files are returned as `medium` severity warnings
+4. Chatbot appends a compliance notice to its response: "⚠ Missing LICENSE file — consider adding one"
+5. Repo is still accessible; user gets actionable guidance
+
+---
+
+#### UC-3: Validate GitHub Actions Workflow Security
+
+**Trigger**: Migration Agent finishes generating a GitHub Actions workflow YAML
+**Actor**: `migration-agent` calls `POST /evaluate/workflow`
+**Input**: Raw YAML string of the generated workflow
+**Policies**: `workflow-has-checkout` (high, blocking), `workflow-no-sudo` (medium, non-blocking), `dependency-pinning` (medium, non-blocking)
+**Flow**:
+1. Migration Agent calls Policy Agent before returning the workflow to the user
+2. Policy Agent scans the YAML: checks for `actions/checkout`, `sudo` usage, pinned action versions
+3. If `actions/checkout` missing: `approved=False`, migration result includes the violation
+4. For non-blocking warnings (sudo, pinning): workflow is returned with a warning list
+5. User sees: "Workflow generated. Warnings: 2 actions use unpinned versions (`@latest`)."
+
+---
+
+#### UC-4: Deployment Gate
+
+**Trigger**: Planner Agent is about to dispatch a `deploy` task
+**Actor**: `planner-agent` calls `POST /evaluate/deployment`
+**Input**: `{"branch": "release/1.2.0", "repo": "web-frontend", "environment": "staging"}`
+**Policies**: All policies with `applies_to: ["deployment"]`
+**Flow**:
+1. Planner calls Policy Agent before dispatching the deploy task event
+2. Policy Agent uses Claude + GitHub API (via MCP) to check:
+   - Branch exists and is not `main`/`develop` for staging deployments
+   - No open critical security advisories on the repo
+   - GitHub Actions CI passed on the branch HEAD
+3. If all pass: `approved=True`, Planner dispatches the task
+4. If blocked: `approved=False`, Planner returns `{"status": "blocked", "reason": "...", "violations": [...]}`
+
+---
+
+#### UC-5: Branch Protection Enforcement
+
+**Trigger**: Chatbot Agent calls `create_gitflow` to set up branching on a new repo
+**Actor**: `chatbot-agent` calls `POST /evaluate/repository`
+**Input**: Repo name + list of created branches
+**Policy**: `branch-protection-required` (medium, non-blocking)
+**Flow**:
+1. After creating gitflow branches, Chatbot calls Policy Agent
+2. Policy Agent checks GitHub (via MCP `github.get_repository`) whether `main`/`develop` have branch protection enabled
+3. If not configured: returns warning with step-by-step instructions to enable protection via GitHub UI
+4. Chatbot appends to response: "⚠ Branch protection is not enabled on `main`. Enable it in Settings → Branches."
+
+---
+
+#### UC-6: Naming Convention Compliance
+
+**Trigger**: Any repo or branch creation via Chatbot
+**Actor**: `chatbot-agent` calls `POST /evaluate/repository`
+**Input**: Proposed repo name or branch name
+**Policy**: `naming-conventions` (low, non-blocking)
+**Flow**:
+1. Before creating the repo, Chatbot calls Policy Agent with the proposed name
+2. Policy Agent checks: kebab-case, no uppercase, no spaces, length 3–50 chars
+3. If violation: return `approved=True` (non-blocking) but include a `suggested_name` in the response
+4. Chatbot uses the suggestion: "Normalised repo name from `Web Frontend` to `web-frontend`."
+
+---
+
+#### UC-7: Dependency Vulnerability Scanning
+
+**Trigger**: CodeGen or `setup_project` creates a `requirements.txt` or `package.json`
+**Actor**: `codegen-agent` or `chatbot-agent` calls `POST /evaluate/code`
+**Input**: Contents of `requirements.txt` / `package.json`
+**Policy**: `dependency-scanning` (medium, non-blocking)
+**Flow**:
+1. After template generation, the calling agent passes dependency files to Policy Agent
+2. Claude analyses declared package versions for known insecure patterns (e.g. very old Django, Flask<2, node packages with known CVEs in training data)
+3. Returns warnings with suggested version upgrades
+4. Calling agent includes the warnings in the response to the user
+
+---
+
+### Integration Points Summary
+
+| Caller Agent | When | Endpoint | Policy |
+|-------------|------|----------|--------|
+| `codegen-agent` | Before `push_to_repo` | `/evaluate/code` | no-hardcoded-secrets, dependency-scanning |
+| `chatbot-agent` | After `setup_project` | `/evaluate/repository` | required-repo-files, naming-conventions, branch-protection-required |
+| `chatbot-agent` | After workflow generation | `/evaluate/workflow` | workflow-has-checkout, dependency-pinning |
+| `migration-agent` | Before returning workflow | `/evaluate/workflow` | workflow-has-checkout, workflow-no-sudo, dependency-pinning |
+| `planner-agent` | Before dispatching deploy | `/evaluate/deployment` | All deployment policies |
+| `remediation-agent` | After auto-fix | `/evaluate/code` | no-hardcoded-secrets |
+
+---
+
+### Documentation Completeness Assessment
+
+The existing documentation provides **sufficient detail** to implement the Policy Agent from scratch:
+
+| Requirement | Documented? | Location |
+|-------------|-------------|----------|
+| BaseAgent inheritance pattern | ✅ | Agent Implementation Pattern section |
+| FastAPI structure + Pydantic models | ✅ | Agent Implementation Pattern section |
+| LangGraph StateGraph pattern | ✅ | graphs.py + graph_states.py |
+| Port assignment (8005 available) | ✅ | Multi-Agent System section |
+| Dockerfile pattern with OCI labels | ✅ | Docker Image Naming Convention + Manual Build |
+| Version management (`__version__`) | ✅ | Version Management section |
+| Claude API usage (`call_claude()`) | ✅ | agent_base.py |
+| Local storage (`/data/db/`) | ✅ | LOCAL_MODE section |
+| Service discovery + env vars | ✅ | Service Discovery section |
+| MCP GitHub operations for repo checks | ✅ | MCP Operations table |
+| Structured logging (`self.logger`) | ✅ | agent_base.py |
+| `process_task()` abstract method | ✅ | agent_base.py |
+| docker-compose service entry | ✅ | docker-compose.local.yml (to be added) |
 
 ## Common Troubleshooting
 

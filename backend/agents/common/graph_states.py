@@ -121,3 +121,31 @@ class CodeGenState(TypedDict, total=False):
     files_generated: int
     status: str
     error: Optional[str]
+
+
+class PolicyState(TypedDict, total=False):
+    """State for Policy Agent governance and compliance graph."""
+    # Input
+    content_type: str          # "code" | "workflow" | "repository" | "deployment"
+    content: str               # The raw content to evaluate
+    context: Dict[str, Any]    # repo_name, framework, branch, caller_agent, etc.
+    policy_ids: Optional[List[str]]  # Specific policies to apply, or None for all
+
+    # Policy loading
+    policies: List[Dict[str, Any]]
+
+    # Scanning
+    scan_results: List[Dict[str, Any]]  # Raw findings from Claude
+
+    # Evaluation
+    violations: List[Dict[str, Any]]    # Categorised violations with severity
+    auto_fixable: bool
+
+    # Fix suggestions
+    suggested_fixes: List[Dict[str, Any]]
+
+    # Output
+    approved: bool             # True = APPROVE, False = BLOCK
+    severity_summary: Dict[str, int]  # {"critical": 0, "high": 1, "medium": 2, "low": 0}
+    report: Dict[str, Any]
+    error: Optional[str]

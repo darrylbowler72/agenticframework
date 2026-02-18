@@ -14,6 +14,7 @@ from common.graph_states import (
     ChatState,
     RemediationState,
     CodeGenState,
+    PolicyState,
 )
 
 
@@ -527,5 +528,98 @@ def build_codegen_graph(agent):
     graph.add_edge("store_artifacts", "push_to_repo")
     graph.add_edge("push_to_repo", "generate_readme")
     graph.add_edge("generate_readme", END)
+
+    return graph.compile()
+
+
+# ---------------------------------------------------------------------------
+# Policy Agent Graph
+# ---------------------------------------------------------------------------
+
+def build_policy_graph(agent):
+    """
+    Build LangGraph for the Policy Agent.
+
+    Graph:
+        load_policies -> scan_content -> evaluate_violations
+                                               |
+                          (violations & auto_fixable) -> suggest_fixes -> build_report -> END
+                                               |
+                          (violations, not auto-fixable) --------> build_report -> END
+                                               |
+                          (no violations) --------------------------------> build_report -> END
+
+    Args:
+        agent: PolicyAgent instance (provides node implementations)
+
+    Returns:
+        Compiled LangGraph
+    """
+
+    async def load_policies(state: PolicyState) -> dict:
+        """Load applicable policies for the given content type."""
+        policies = await agent._load_policies(
+            content_type=state.get("content_type", "code"),
+            policy_ids=state.get("policy_ids"),
+        )
+        return {"policies": policies}
+
+    async def scan_content(state: PolicyState) -> dict:
+        """Use Claude to scan content against loaded policy rules."""
+        scan_results = await agent._scan_content(
+            content=state["content"],
+            content_type=state.get("content_type", "code"),
+            policies=state["policies"],
+            context=state.get("context", {}),
+        )
+        return {"scan_results": scan_results}
+
+    async def evaluate_violations(state: PolicyState) -> dict:
+        """Classify scan results by severity and determine approval decision."""
+        violations, auto_fixable, approved, severity_summary = agent._evaluate_violations(
+            state["scan_results"]
+        )
+        return {
+            "violations": violations,
+            "auto_fixable": auto_fixable,
+            "approved": approved,
+            "severity_summary": severity_summary,
+        }
+
+    async def suggest_fixes(state: PolicyState) -> dict:
+        """Use Claude to generate concrete fix suggestions for auto-fixable violations."""
+        fixes = await agent._suggest_fixes(
+            violations=state["violations"],
+            content=state["content"],
+            content_type=state.get("content_type", "code"),
+        )
+        return {"suggested_fixes": fixes}
+
+    async def build_report(state: PolicyState) -> dict:
+        """Assemble the final structured evaluation report."""
+        report = agent._build_report(state)
+        return {"report": report}
+
+    def route_after_evaluate(state: PolicyState) -> str:
+        if state.get("violations") and state.get("auto_fixable"):
+            return "suggest_fixes"
+        return "build_report"
+
+    graph = StateGraph(PolicyState)
+    graph.add_node("load_policies", load_policies)
+    graph.add_node("scan_content", scan_content)
+    graph.add_node("evaluate_violations", evaluate_violations)
+    graph.add_node("suggest_fixes", suggest_fixes)
+    graph.add_node("build_report", build_report)
+
+    graph.set_entry_point("load_policies")
+    graph.add_edge("load_policies", "scan_content")
+    graph.add_edge("scan_content", "evaluate_violations")
+    graph.add_conditional_edges("evaluate_violations", route_after_evaluate, {
+        "suggest_fixes": "suggest_fixes",
+        "build_report": "build_report",
+    })
+    graph.add_edge("suggest_fixes", "build_report")
+    graph.add_edge("build_report", END)
 
     return graph.compile()

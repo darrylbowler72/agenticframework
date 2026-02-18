@@ -124,6 +124,29 @@ services:
       mcp-github:
         condition: service_healthy
 
+  # Policy Agent - governance and compliance gate for all other agents
+  policy-agent:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.policy
+    container_name: policy-agent
+    ports:
+      - "8005:8005"
+    environment:
+      - LOCAL_MODE=true
+      - ENVIRONMENT=local
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_OWNER=${GITHUB_OWNER:-darrylbowler72}
+      - MCP_GITHUB_URL=http://mcp-github:8100
+    volumes:
+      - local-data:/data
+    networks:
+      - agentic-local
+    depends_on:
+      mcp-github:
+        condition: service_healthy
+
   # Chatbot Agent - conversational interface, depends on all other agents
   chatbot-agent:
     build:
@@ -144,6 +167,7 @@ services:
       - CODEGEN_URL=http://codegen-agent:8001
       - REMEDIATION_URL=http://remediation-agent:8002
       - MIGRATION_URL=http://migration-agent:8004
+      - POLICY_URL=http://policy-agent:8005
     volumes:
       - local-data:/data
     networks:
@@ -158,6 +182,8 @@ services:
       remediation-agent:
         condition: service_started
       migration-agent:
+        condition: service_started
+      policy-agent:
         condition: service_started
 
 volumes:
