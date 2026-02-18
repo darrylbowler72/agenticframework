@@ -336,11 +336,15 @@ class ChatbotAgent(BaseAgent):
     async def analyze_intent(self, message: str, conversation_history: List[Dict]) -> Dict:
         """Use Claude to analyze user intent and determine action."""
 
-        # Build context from conversation history
-        context = "\n".join([
-            f"{msg['role']}: {msg['content']}"
-            for msg in conversation_history[-5:]  # Last 5 messages
-        ])
+        # Build context from conversation history (truncate long messages to avoid confusing intent analysis)
+        context_parts = []
+        for msg in conversation_history[-5:]:
+            content = msg['content']
+            # Trim very long assistant messages (e.g. full action results) to just the first sentence
+            if msg['role'] == 'assistant' and len(content) > 200:
+                content = content[:200].rsplit('\n', 1)[0] + '...'
+            context_parts.append(f"{msg['role']}: {content}")
+        context = "\n".join(context_parts)
 
         system_prompt = """You are "DevOps at Your Service", an AI assistant for a DevOps automation framework.
 
@@ -404,11 +408,87 @@ Analyze the intent and provide your response in JSON format."""
             response = await self.call_claude(
                 prompt=user_prompt,
                 system=system_prompt,
-                temperature=0.7
+                temperature=0.1
             )
 
-            # Parse JSON response
-            return json.loads(response)
+            # Strip markdown fences if Claude wrapped the JSON
+            cleaned = response.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned[cleaned.index("\n") + 1:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+
+            # Attempt 1: direct parse
+            try:
+                return json.loads(cleaned)
+            except json.JSONDecodeError:
+                pass
+
+            # Attempt 2: extract first complete {...} block
+            start = cleaned.find("{")
+            end = cleaned.rfind("}") + 1
+            if start != -1 and end > start:
+                try:
+                    return json.loads(cleaned[start:end])
+                except json.JSONDecodeError:
+                    pass
+
+            # Attempt 3: repair literal newlines inside JSON string values
+            # Claude sometimes puts real \n inside "response": "...\n..." breaking JSON
+            import re as _re
+            def _repair_json_strings(s):
+                # Replace literal newlines/tabs inside JSON string values with escaped versions
+                result = []
+                in_string = False
+                escape_next = False
+                for ch in s:
+                    if escape_next:
+                        result.append(ch)
+                        escape_next = False
+                    elif ch == '\\':
+                        result.append(ch)
+                        escape_next = True
+                    elif ch == '"':
+                        result.append(ch)
+                        in_string = not in_string
+                    elif in_string and ch == '\n':
+                        result.append('\\n')
+                    elif in_string and ch == '\r':
+                        result.append('\\r')
+                    elif in_string and ch == '\t':
+                        result.append('\\t')
+                    else:
+                        result.append(ch)
+                return ''.join(result)
+
+            try:
+                repaired = _repair_json_strings(cleaned[start:end] if start != -1 else cleaned)
+                return json.loads(repaired)
+            except (json.JSONDecodeError, Exception):
+                pass
+
+            # Attempt 4: regex-extract key fields (intent, action_needed, parameters)
+            intent_m = _re.search(r'"intent"\s*:\s*"(\w+)"', cleaned)
+            action_m = _re.search(r'"action_needed"\s*:\s*(true|false)', cleaned)
+            params_m = _re.search(r'"parameters"\s*:\s*(\{[^}]*\})', cleaned, _re.DOTALL)
+            resp_m = _re.search(r'"response"\s*:\s*"((?:[^"\\]|\\.)*)"', cleaned)
+            if intent_m and action_m:
+                params = {}
+                if params_m:
+                    try:
+                        params = json.loads(params_m.group(1))
+                    except Exception:
+                        pass
+                return {
+                    "intent": intent_m.group(1),
+                    "action_needed": action_m.group(1) == "true",
+                    "parameters": params,
+                    "response": resp_m.group(1) if resp_m else "I'll take care of that for you.",
+                }
+
+            raise json.JSONDecodeError("All repair attempts failed", cleaned, 0)
+
         except json.JSONDecodeError:
             # If Claude doesn't return valid JSON, wrap the response
             return {
