@@ -131,7 +131,7 @@ services:
       dockerfile: backend/Dockerfile.policy
     container_name: policy-agent
     ports:
-      - "8005:8005"
+      - "8006:8006"
     environment:
       - LOCAL_MODE=true
       - ENVIRONMENT=local
@@ -167,7 +167,7 @@ services:
       - CODEGEN_URL=http://codegen-agent:8001
       - REMEDIATION_URL=http://remediation-agent:8002
       - MIGRATION_URL=http://migration-agent:8004
-      - POLICY_URL=http://policy-agent:8005
+      - POLICY_URL=http://policy-agent:8006
     volumes:
       - local-data:/data
     networks:

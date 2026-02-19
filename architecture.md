@@ -38,12 +38,12 @@ The DevOps Agentic Framework is an autonomous, AI-driven platform designed to ac
                     localhost (host machine)
                        │
      ┌─────────────────┼──────────────────────────────────────────┐
-     │  :8000     :8001 │  :8002     :8003      :8004    :8005    │
+     │  :8000     :8001 │  :8002     :8003      :8004    :8006    │
      ▼            ▼     ▼      ▼           ▼          ▼       ▼  │
 ┌────────┐ ┌────────┐ ┌────────┐ ┌──────────┐ ┌─────────┐ ┌──────────┐ │
 │Planner │ │CodeGen │ │Remediat│ │ Chatbot  │ │Migration│ │ Policy   │ │
 │Agent   │ │Agent   │ │Agent   │ │ Agent    │ │Agent    │ │ Agent    │ │
-│:8000   │ │:8001   │ │:8002   │ │ :8003    │ │:8004    │ │ :8005    │ │
+│:8000   │ │:8001   │ │:8002   │ │ :8003    │ │:8004    │ │ :8006    │ │
 └────┬───┘ └────┬───┘ └────┬───┘ └─────┬────┘ └────┬────┘ └────┬─────┘ │
      │          │          │           │            │           │      │
      └──────────┼──────────┼───────────┼────────────┼───────────┘      │
@@ -70,7 +70,7 @@ The DevOps Agentic Framework is an autonomous, AI-driven platform designed to ac
 | Remediation Agent | `remediation-agent` | 8002 | Auto-fixes detected issues |
 | Chatbot Agent | `chatbot-agent` | 8003 | Conversational DevOps interface (web UI) |
 | Migration Agent | `migration-agent` | 8004 | Converts Jenkins pipelines to GitHub Actions |
-| Policy Agent | `policy-agent` | 8005 | Governance and compliance enforcement gate |
+| Policy Agent | `policy-agent` | 8006 | Governance and compliance enforcement gate |
 
 ### Service Startup Order
 
@@ -96,7 +96,7 @@ Chatbot           → http://codegen-agent:8001/generate
 Chatbot           → http://remediation-agent:8002/remediate
 Chatbot           → http://migration-agent:8004/migration
 Chatbot/CodeGen/
-Migration/Planner → http://policy-agent:8005/evaluate
+Migration/Planner → http://policy-agent:8006/evaluate
 All               → http://mcp-github:8100/mcp/call
 ```
 
@@ -188,7 +188,7 @@ from common.local_storage import (
 - Integrates with Jenkins servers and GitHub
 - Reads GitHub token from `GITHUB_TOKEN` environment variable
 
-#### 6. Policy Agent (port 8005)
+#### 6. Policy Agent (port 8006)
 - Governance and compliance enforcement for all DevOps pipeline stages
 - Evaluates code, workflows, repositories, and deployment requests against configurable policy rules
 - Returns `approved: true/false` with violation details and auto-fix suggestions
@@ -381,11 +381,11 @@ Chatbot Agent (:8003)
     │
     ├─ Claude AI (intent analysis)
     │
-    ├─ If workflow request ──> Planner Agent (:8000) ──> Policy (:8005) [deploy gate]
-    ├─ If codegen request  ──> CodeGen Agent (:8001) ──> Policy (:8005) [code check]
-    ├─ If fix request      ──> Remediation Agent (:8002) → Policy (:8005) [fix check]
-    ├─ If migration        ──> Migration Agent (:8004) ──> Policy (:8005) [workflow check]
-    ├─ If setup_project    ──> Policy Agent (:8005) [repo compliance]
+    ├─ If workflow request ──> Planner Agent (:8000) ──> Policy (:8006) [deploy gate]
+    ├─ If codegen request  ──> CodeGen Agent (:8001) ──> Policy (:8006) [code check]
+    ├─ If fix request      ──> Remediation Agent (:8002) → Policy (:8006) [fix check]
+    ├─ If migration        ──> Migration Agent (:8004) ──> Policy (:8006) [workflow check]
+    ├─ If setup_project    ──> Policy Agent (:8006) [repo compliance]
     └─ If GitHub operation ──> MCP GitHub Server (:8100)
                                       │
                                       ▼
@@ -656,7 +656,7 @@ GET /health
   /remediation/           # Auto-remediation
   /chatbot/               # Conversational interface (+ web UI)
   /migration/             # Jenkins to GitHub Actions migration
-  /policy/                # Governance and compliance enforcement (port 8005)
+  /policy/                # Governance and compliance enforcement (port 8006)
   /common/                # Shared utilities
     agent_base.py          # BaseAgent class (LOCAL_MODE logic)
     local_storage.py       # Local replacements for AWS services

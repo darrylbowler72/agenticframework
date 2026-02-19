@@ -17,7 +17,7 @@ The framework consists of 7 specialized AI agents running as local containers:
 3. **Remediation Agent** (port 8002) — Auto-fixes detected issues in code/workflows
 4. **Chatbot Agent** (port 8003) — Natural language interface for DevOps operations
 5. **Migration Agent** (port 8004) — Converts Jenkins pipelines to GitHub Actions
-6. **Policy Agent** (port 8005) — Enforces governance policies and compliance gates
+6. **Policy Agent** (port 8006) — Enforces governance policies and compliance gates
 7. **MCP GitHub Server** (port 8100) — Model Context Protocol server for GitHub operations
 
 All agents inherit from `BaseAgent` (`backend/agents/common/agent_base.py`) which provides:
@@ -95,7 +95,7 @@ bash scripts/run-local.sh up
 # CodeGen:           http://localhost:8001/health
 # Remediation:       http://localhost:8002/health
 # Migration:         http://localhost:8004/health
-# Policy:            http://localhost:8005/health
+# Policy:            http://localhost:8006/health
 # MCP GitHub:        http://localhost:8100/health
 
 # 4. Management
@@ -140,7 +140,7 @@ podman.exe run -d --name planner-agent     $NET $VOL     -p 8000:8000 $ENV_ARGS 
 podman.exe run -d --name codegen-agent     $NET $VOL     -p 8001:8001 $ENV_ARGS codegen-agent
 podman.exe run -d --name remediation-agent $NET $VOL     -p 8002:8002 $ENV_ARGS remediation-agent
 podman.exe run -d --name migration-agent   $NET $VOL     -p 8004:8004 $ENV_ARGS migration-agent
-podman.exe run -d --name policy-agent      $NET $VOL     -p 8005:8005 $ENV_ARGS policy-agent
+podman.exe run -d --name policy-agent      $NET $VOL     -p 8006:8006 $ENV_ARGS policy-agent
 podman.exe run -d --name chatbot-agent     $NET $VOL     -p 8003:8003 $ENV_ARGS chatbot-agent
 ```
 
@@ -220,7 +220,7 @@ Agents find each other via container DNS names on the `agentic-local` network:
 - `http://codegen-agent:8001`
 - `http://remediation-agent:8002`
 - `http://migration-agent:8004`
-- `http://policy-agent:8005`
+- `http://policy-agent:8006`
 - `http://mcp-github:8100`
 
 Configurable via env vars: `PLANNER_URL`, `CODEGEN_URL`, `REMEDIATION_URL`, `MIGRATION_URL`, `POLICY_URL`, `MCP_GITHUB_URL`
@@ -358,7 +358,7 @@ The Migration Agent converts Jenkins pipelines to GitHub Actions workflows:
 | `GET` | `/migration/integration/test` | Test Jenkins→GitHub integration end-to-end |
 | `GET` | `/health` | Health check |
 
-#### Policy Agent (:8005)
+#### Policy Agent (:8006)
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/evaluate` | Evaluate content (code, workflow, repo, deployment) against all applicable policies |
@@ -383,9 +383,9 @@ The Migration Agent converts Jenkins pipelines to GitHub Actions workflows:
 
 ### Purpose
 
-The Policy Agent (port 8005) is a governance and compliance layer that evaluates content at every stage of the DevOps pipeline. It acts as a configurable gate that other agents can call before pushing code, creating repositories, generating workflows, or dispatching deployments.
+The Policy Agent (port 8006) is a governance and compliance layer that evaluates content at every stage of the DevOps pipeline. It acts as a configurable gate that other agents can call before pushing code, creating repositories, generating workflows, or dispatching deployments.
 
-> **Status**: Implemented and deployed. Container `policy-agent` on port 8005.
+> **Status**: Implemented and deployed. Container `policy-agent` on port 8006.
 
 ### Technology Approach
 
@@ -405,7 +405,7 @@ Chatbot / CodeGen / Migration / Planner / Remediation
                     |
           POST /evaluate/<content-type>
                     |
-             Policy Agent (:8005)
+             Policy Agent (:8006)
                     |
           LangGraph Policy Graph
                     |
@@ -532,13 +532,13 @@ When implementing `backend/agents/policy/main.py`:
 8. Implement `_suggest_fixes(violations)` — `call_claude()` to produce code-level suggestions
 9. Implement `_build_report(state)` — return structured JSON
 10. Seed default policies on first startup (check if `/data/db/local-policies.json` exists)
-11. Expose all endpoints listed in [API Reference](#policy-agent-8005)
+11. Expose all endpoints listed in [API Reference](#policy-agent-8006)
 12. `/health` must return `{"status": "healthy", "agent": "policy", "version": __version__, "timestamp": ...}`
 
 **Dockerfile**: `backend/Dockerfile.policy` — follow the same pattern as `Dockerfile.remediation`
-**Port**: 8005
+**Port**: 8006
 **Container name**: `policy-agent`
-**Env var**: `POLICY_URL` (default: `http://policy-agent:8005`)
+**Env var**: `POLICY_URL` (default: `http://policy-agent:8006`)
 
 ### Calling the Policy Agent from Other Agents
 
@@ -546,7 +546,7 @@ When implementing `backend/agents/policy/main.py`:
 import httpx
 
 async def check_policy(content_type: str, content: str, context: dict) -> dict:
-    policy_url = os.getenv("POLICY_URL", "http://policy-agent:8005")
+    policy_url = os.getenv("POLICY_URL", "http://policy-agent:8006")
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"{policy_url}/evaluate/{content_type}",
@@ -691,7 +691,7 @@ The existing documentation provides **sufficient detail** to implement the Polic
 | BaseAgent inheritance pattern | ✅ | Agent Implementation Pattern section |
 | FastAPI structure + Pydantic models | ✅ | Agent Implementation Pattern section |
 | LangGraph StateGraph pattern | ✅ | graphs.py + graph_states.py |
-| Port assignment (8005 available) | ✅ | Multi-Agent System section |
+| Port assignment (8006 available) | ✅ | Multi-Agent System section |
 | Dockerfile pattern with OCI labels | ✅ | Docker Image Naming Convention + Manual Build |
 | Version management (`__version__`) | ✅ | Version Management section |
 | Claude API usage (`call_claude()`) | ✅ | agent_base.py |

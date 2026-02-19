@@ -25,7 +25,7 @@ COPY backend/agents/policy/ /app/policy/
 ENV PYTHONPATH=/app
 
 # Expose port
-EXPOSE 8005
+EXPOSE 8006
 
 # Run the agent
-CMD ["uvicorn", "policy.main:app", "--host", "0.0.0.0", "--port", "8005"]
+CMD ["uvicorn", "policy.main:app", "--host", "0.0.0.0", "--port", "8006"]

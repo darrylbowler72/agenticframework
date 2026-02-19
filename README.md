@@ -27,7 +27,7 @@ That's it. All 7 AI agents are now running locally.
 | CodeGen Agent | 8001 | http://localhost:8001/health | Generates microservices and infrastructure code |
 | Remediation Agent | 8002 | http://localhost:8002/health | Auto-fixes detected issues |
 | Migration Agent | 8004 | http://localhost:8004/health | Converts Jenkins pipelines to GitHub Actions |
-| Policy Agent | 8005 | http://localhost:8005/health | Enforces governance policies and compliance gates |
+| Policy Agent | 8006 | http://localhost:8006/health | Enforces governance policies and compliance gates |
 | MCP GitHub Server | 8100 | http://localhost:8100/health | GitHub operations via Model Context Protocol |
 
 ## What You Can Do
@@ -82,7 +82,7 @@ curl -X POST http://localhost:8004/migrate \
 
 #### Evaluate Code Against Policy
 ```bash
-curl -X POST http://localhost:8005/evaluate/code \
+curl -X POST http://localhost:8006/evaluate/code \
   -H "Content-Type: application/json" \
   -d '{
     "content": "API_KEY = \"sk-abc123\"\ndb_password = \"secret\"",
@@ -123,7 +123,7 @@ User Browser → Chatbot (:8003) → Claude AI (intent analysis)
                    ├──> CodeGen Agent (:8001)
                    ├──> Remediation Agent (:8002)
                    ├──> Migration Agent (:8004)
-                   ├──> Policy Agent (:8005)  ← governance & compliance gate
+                   ├──> Policy Agent (:8006)  ← governance & compliance gate
                    └──> MCP GitHub Server (:8100) → GitHub API
 ```
 

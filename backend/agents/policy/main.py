@@ -332,8 +332,13 @@ class PolicyAgent(BaseAgent):
 
         system_prompt = (
             "You are a DevOps policy compliance scanner. Analyse the provided content "
-            "against each policy rule and report ALL violations found.\n\n"
-            "Return a JSON array of violation objects. Each object must have:\n"
+            "against each policy rule and report ONLY ACTUAL violations found.\n\n"
+            "CRITICAL RULES:\n"
+            "- Only report genuine violations where the content actually breaks a rule.\n"
+            "- Do NOT report a finding if the code is compliant. Using os.getenv() is NOT a violation.\n"
+            "- If no violations exist, you MUST return exactly: []\n"
+            "- Never create a violation object to say 'no issues found'.\n\n"
+            "For each real violation, return a JSON object with:\n"
             '  - "policy_id": the policy ID\n'
             '  - "rule": which specific rule was violated\n'
             '  - "severity": the policy severity (critical/high/medium/low)\n'
@@ -341,7 +346,6 @@ class PolicyAgent(BaseAgent):
             '  - "auto_fix": boolean - can this be fixed automatically?\n'
             '  - "description": brief explanation of the violation\n'
             '  - "location": where in the content (file, line, match) if applicable\n\n'
-            "If no violations are found, return an empty JSON array: []\n"
             "Return ONLY the JSON array, no markdown fences or extra text."
         )
 
@@ -362,8 +366,20 @@ class PolicyAgent(BaseAgent):
             )
             results = self._parse_json_response(response, default=[])
             if isinstance(results, list):
-                self.logger.info(f"Scan found {len(results)} potential violations")
-                return results
+                # Filter out false positives where Claude reports "no issue found"
+                false_positive_phrases = [
+                    "no violation", "no hardcoded", "no issue", "not found",
+                    "compliant", "no secret", "properly uses", "correctly uses",
+                ]
+                filtered = []
+                for r in results:
+                    desc = r.get("description", "").lower()
+                    if any(phrase in desc for phrase in false_positive_phrases):
+                        self.logger.info(f"Filtered false positive: {desc}")
+                        continue
+                    filtered.append(r)
+                self.logger.info(f"Scan found {len(filtered)} violations (filtered {len(results) - len(filtered)} false positives)")
+                return filtered
             return []
         except Exception as e:
             self.logger.error(f"Content scan failed: {e}")
@@ -718,4 +734,4 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8005)
+    uvicorn.run(app, host="0.0.0.0", port=8006)
