@@ -95,6 +95,15 @@ class LocalDynamoDBTable:
         self._save()
         return {}
 
+    def delete_item(self, Key: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+        """Delete an item by key."""
+        key = self._make_key(Key)
+        if key in self._data:
+            del self._data[key]
+            self._save()
+            logger.info(f"Deleted item with key {Key} from {self.table_name}")
+        return {}
+
     def scan(self, **kwargs) -> Dict[str, Any]:
         """Scan all items."""
         items = list(self._data.values())

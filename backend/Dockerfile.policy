@@ -1,0 +1,31 @@
+FROM python:3.11-slim
+
+ARG VERSION=1.1.0
+LABEL org.opencontainers.image.title="policy-agent" \
+      org.opencontainers.image.description="DevOps Agentic Framework - Policy Agent" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.source="https://github.com/darrylbowler72/agenticframework"
+
+WORKDIR /app
+
+# Copy VERSION file for semantic versioning
+COPY VERSION /VERSION
+
+# Copy common modules and requirements
+COPY backend/agents/common/ /app/common/
+COPY backend/agents/common/requirements.txt /app/requirements.txt
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy policy agent
+COPY backend/agents/policy/ /app/policy/
+
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Expose port
+EXPOSE 8005
+
+# Run the agent
+CMD ["uvicorn", "policy.main:app", "--host", "0.0.0.0", "--port", "8005"]

@@ -265,6 +265,7 @@ Data persists in the `local-data` volume at `/data`:
 ## Documentation
 
 - [Architecture Documentation](./architecture.md) - Detailed technical architecture
+- [Policy Agent Guide](./docs/policy-agent.md) - Governance policies, API reference, and integration guide
 - User Stories: See `/user-stories` directory for requirements
 
 ## Support

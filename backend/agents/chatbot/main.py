@@ -1228,6 +1228,7 @@ async def get_agents_health():
         "remediation": os.getenv('REMEDIATION_URL', 'http://remediation-agent:8002') + '/health',
         "chatbot": "healthy",
         "migration": os.getenv('MIGRATION_URL', 'http://migration-agent:8004') + '/health',
+        "policy": os.getenv('POLICY_URL', 'http://policy-agent:8005') + '/health',
         "mcp-github": os.getenv('MCP_GITHUB_URL', 'http://mcp-github:8100') + '/health',
     }
 

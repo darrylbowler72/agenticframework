@@ -129,6 +129,7 @@ print_urls() {
     echo "  Remediation Agent: http://localhost:8002/health"
     echo "  Chatbot UI:        http://localhost:8003"
     echo "  Migration Agent:   http://localhost:8004/health"
+    echo "  Policy Agent:      http://localhost:8005/health"
     echo "  MCP GitHub Server: http://localhost:8100/health"
 }
 

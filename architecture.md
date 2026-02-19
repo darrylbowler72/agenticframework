@@ -415,13 +415,14 @@ All storage is implemented in `backend/agents/common/local_storage.py`.
 
 In-memory dictionary with JSON file persistence at `/data/db/<table-name>.json`.
 
-**Supported operations**: `put_item`, `get_item`, `query`, `update_item`, `scan`, `load`
+**Supported operations**: `put_item`, `get_item`, `query`, `update_item`, `delete_item`, `scan`, `load`
 
 ```
 /data/db/
   ├── local-workflows.json
   ├── local-tasks.json
-  └── local-chatbot-sessions.json
+  ├── local-chatbot-sessions.json
+  └── local-policies.json
 ```
 
 ### LocalS3Client
@@ -578,13 +579,16 @@ DELETE /policies/{policy_id}
 Response (all /evaluate/* endpoints):
 {
   "approved": true,
+  "content_type": "code",
   "severity_summary": { "critical": 0, "high": 0, "medium": 1, "low": 0 },
   "violations": [
-    { "rule": "required-repo-files", "severity": "medium",
-      "detail": "LICENSE file is missing", "auto_fix": false }
+    { "policy_id": "required-repo-files", "rule": "README.md must exist",
+      "severity": "medium", "blocking": false, "auto_fix": false,
+      "description": "LICENSE file is missing", "location": "" }
   ],
   "suggested_fixes": [],
-  "report": { ... }
+  "policies_evaluated": 3,
+  "timestamp": "<iso8601>"
 }
 ```
 
@@ -727,5 +731,5 @@ To reset all data: `bash scripts/run-local.sh down` (removes volumes)
 
 ---
 
-*Last Updated: 2026-02-18*
+*Last Updated: 2026-02-19*
 *Version: 1.1.0 (local-podman)*
