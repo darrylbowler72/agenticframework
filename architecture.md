@@ -4,13 +4,16 @@
 1. [System Overview](#system-overview)
 2. [Local Deployment Architecture](#local-deployment-architecture)
 3. [Agent Architecture](#agent-architecture)
-4. [Data Flow & Orchestration](#data-flow--orchestration)
-5. [Model Context Protocol (MCP)](#model-context-protocol-mcp)
-6. [Local Storage Layer](#local-storage-layer)
-7. [Security & Configuration](#security--configuration)
-8. [API Specifications](#api-specifications)
-9. [Developer Guide](#developer-guide)
-10. [Technology Glossary](#technology-glossary)
+4. [LangGraph Integration](#langgraph-integration)
+5. [Data Flow & Orchestration](#data-flow--orchestration)
+6. [Model Context Protocol (MCP)](#model-context-protocol-mcp)
+7. [Local Storage Layer](#local-storage-layer)
+8. [Security & Configuration](#security--configuration)
+9. [API Specifications](#api-specifications)
+10. [Developer Guide](#developer-guide)
+11. [User Stories](#user-stories)
+12. [Technology Glossary](#technology-glossary)
+13. [Appendix: RAG System Design Guide](#appendix-rag-system-design-guide)
 
 ---
 
@@ -192,6 +195,39 @@ from common.local_storage import (
 - Policies stored in `/data/db/local-policies.json` with per-type applicability
 - Called by other agents as a gate before pushing code or dispatching deployments
 - Default policies include: no hardcoded secrets, required repo files, workflow security rules, naming conventions
+
+**Technology Approach — Claude AI vs OPA**
+
+| | Claude AI + English Rules | OPA / Rego |
+|---|---|---|
+| **Rule authoring** | Natural language — anyone can write rules | Rego DSL — requires learning a new language |
+| **Flexibility** | Handles nuance, context, fuzzy matching | Strict logical evaluation only |
+| **Consistency** | LLM may vary across runs (mitigated by temperature 0.1) | Deterministic |
+| **Dependencies** | Already available (all agents use Claude) | Requires additional infrastructure |
+| **Best for** | Local dev tools, small teams, advisory policies | Production enforcement, audit requirements |
+
+**Integration Model — Pre-Push Gate**
+
+The Policy Agent operates as an internal pre-push gate, not an external GitHub App or webhook:
+
+```
+Agent (e.g. CodeGen)
+  +-- generates code
+  +-- POST /evaluate/code  -->  Policy Agent  -->  approved: true/false
+  +-- if approved: push to GitHub
+  +-- if blocked: return error to caller
+```
+
+Policies are enforced before content reaches GitHub. No GitHub App installation or webhook configuration required. Works entirely within the local container network.
+
+| Caller Agent | When | Endpoint | Policies Applied |
+|-------------|------|----------|-----------------|
+| `codegen-agent` | Before `push_to_repo` | `/evaluate/code` | no-hardcoded-secrets |
+| `chatbot-agent` | After `setup_project` | `/evaluate/repository` | required-repo-files, naming-conventions, branch-protection-required |
+| `chatbot-agent` | After workflow generation | `/evaluate/workflow` | workflow-has-checkout, dependency-pinning |
+| `migration-agent` | Before returning workflow | `/evaluate/workflow` | workflow-has-checkout, workflow-no-sudo, dependency-pinning |
+| `planner-agent` | Before dispatching deploy | `/evaluate/deployment` | All deployment policies |
+| `remediation-agent` | After auto-fix | `/evaluate/code` | no-hardcoded-secrets |
 
 #### 7. MCP GitHub Server (port 8100)
 - Model Context Protocol server for GitHub operations
@@ -700,6 +736,152 @@ To reset all data: `bash scripts/run-local.sh down` (removes volumes)
 
 ---
 
+## User Stories
+
+### US-1: Application Scaffolding via Backstage Templates
+
+**Epic**: Application Development Scaffolding
+**Priority**: High | **Effort**: 8-10 story points (2-3 weeks)
+
+**Story**: As a developer, I want to create a new microservice with all necessary boilerplate code, infrastructure, and CI/CD pipelines through a Backstage template so that I can start building business logic immediately.
+
+**Acceptance Criteria (Must Have)**:
+- Backstage software template registered in catalog
+- Template collects: service name, language (Python/Node.js/Go), database (PostgreSQL/JSON/None), API type (REST/gRPC/GraphQL), target environment
+- Template triggers Planner Agent via API
+- Generated repository includes: application code with CRUD endpoints, Dockerfile, docker-compose.yml, README.md, .gitignore
+- IaC (Terraform): VPC/networking, database resources, service config, env var definitions
+- CI/CD: GitHub Actions workflow with build, test, scan, deploy stages
+- Kubernetes manifests: Deployment, Service, Ingress, ConfigMap, Secret refs, HPA
+
+**Acceptance Criteria (Should Have)**:
+- Advanced options: Redis cache, message queue, scheduled jobs, auth method (JWT/OAuth2)
+- Generated code includes: unit test scaffolding, OpenTelemetry instrumentation, health endpoints (`/health`, `/ready`), graceful shutdown
+- ArgoCD Application manifest committed to GitOps repo
+
+**Technical Flow**:
+```
+Backstage UI → Software Template (YAML) → POST /workflows → Planner Agent (:8000)
+  → task.created event → CodeGen Agent (:8001)
+    → retrieve templates from local storage
+    → render with Jinja2
+    → create GitHub repo via MCP Server
+    → push generated code
+    → update Backstage catalog
+```
+
+**Success Metrics**: Service creation < 5 min, 80% template adoption, > 70% reduction in setup tickets
+
+---
+
+### US-2: DevOps Chatbot for Natural Language Interaction
+
+**Epic**: Developer Experience & Intelligent Operations
+**Priority**: High | **Effort**: 13-15 story points (3-4 weeks)
+
+**Story**: As a developer or DevOps engineer, I want to interact with the agentic framework through natural language via a chatbot so that I can perform common DevOps tasks without navigating multiple tools.
+
+**Acceptance Criteria (Must Have)**:
+- Bot responds to natural language queries and commands
+- Core command categories: status queries, workflow triggers, observability insights, policy checks
+- Conversation context maintained within a session
+- Bot handles ambiguous requests with clarifying questions
+- Error messages are user-friendly with suggested next steps
+
+**Acceptance Criteria (Should Have)**:
+- Interactive components: buttons, dropdown menus, confirmation dialogs for destructive actions
+- Rich formatting: tables, code blocks, inline status indicators
+- Bot explains its reasoning for decisions
+- Conversation history stored for audit
+- Proactive notifications: deployment completed/failed, policy violations, anomalies
+
+**Intent Recognition Categories**:
+
+| Category | Examples |
+|----------|----------|
+| Query | "What's the status of user-service?", "Show recent deployments" |
+| Action | "Deploy payment-service to staging", "Create a new Python service" |
+| Analysis | "Why did the last build fail?", "Show error trends" |
+| Help | "What can you do?", "How do I migrate a pipeline?" |
+
+**Technical Architecture**:
+```
+Web Browser / Slack → Chatbot Agent (:8003) → Claude API (intent recognition)
+  → Agent Router → Planner / CodeGen / Remediation / Migration / Policy / MCP GitHub
+```
+
+**Success Metrics**: 60% adoption, 85% task success rate, < 3s response time, > 4.2/5 satisfaction
+
+---
+
+### US-3: Intelligent Auto-Remediation for Broken Pipelines
+
+**Epic**: Automated Remediation & Self-Healing Systems
+**Priority**: Critical | **Effort**: 21 story points (4-5 weeks)
+
+**Story**: As a DevOps engineer, I want the system to automatically diagnose and fix common CI/CD pipeline failures so that developers experience fewer build failures and teams spend less time on manual troubleshooting.
+
+**Acceptance Criteria (Must Have)**:
+- Remediation Agent monitors pipeline failures via webhooks
+- AI analyzes logs to identify root cause
+- Automated fixes for: dependency issues, environment config, flaky tests, resource limits, infrastructure issues
+- Risk-based categorization: low (auto-fix), medium (auto-fix + notify), high (requires approval)
+- All actions logged and auditable
+- Developer notified with: root cause, fix description, link to updated run
+
+**Acceptance Criteria (Should Have)**:
+- Auto-creates PRs for code-level fixes with detailed descriptions
+- Agent learns from manual fixes (pattern storage)
+- Dashboard: failure trends, top categories, success rate, time saved
+- Incident ticket creation after 3 failed auto-fix attempts
+
+**Failure Categories and Auto-Fix Strategies**:
+
+| Category | Examples | Auto-Fix Strategy |
+|----------|----------|-------------------|
+| Dependency | Missing packages, version conflicts | Update lock files, pin versions |
+| Environment | Missing env vars, wrong configs | Set defaults, fix config files |
+| Flaky Tests | Timing issues, race conditions | Add retries, increase timeouts |
+| Resource Limits | OOM, disk full, CPU throttling | Increase limits, clean caches |
+| Infrastructure | Network timeouts, DNS failures | Retry with backoff, failover |
+
+**Remediation Playbook Schema**:
+```json
+{
+  "playbook_id": "dep-001",
+  "category": "dependency",
+  "failure_pattern": "ModuleNotFoundError",
+  "risk_level": "low",
+  "auto_fix_enabled": true,
+  "remediation_steps": ["identify_missing_package", "add_to_requirements", "commit_and_push"],
+  "success_rate": 0.85,
+  "usage_count": 142
+}
+```
+
+**Technical Flow**:
+```
+GitHub Webhook → Remediation Agent (:8002)
+  → fetch pipeline logs (via MCP Server :8100)
+  → analyze with Claude API
+  → query Playbook DB
+  → execute fix → monitor new run → notify developer
+```
+
+**Success Metrics**: > 70% auto-fix rate, < 5 min remediation time, 20+ hrs/week saved, > 92% pipeline success rate
+
+---
+
+### Implementation Sequence
+
+| Phase | Weeks | Story | Rationale |
+|-------|-------|-------|-----------|
+| 1. Foundation | 1-3 | Application Scaffolding | Immediate developer value, tests core infrastructure |
+| 2. Intelligence | 4-7 | Auto-Fix Broken Pipelines | Reduces operational burden, demonstrates AI capabilities |
+| 3. Experience | 8-11 | DevOps Chatbot | Enhances all features, provides unified interface |
+
+---
+
 ## Technology Glossary
 
 | Technology | Category | Description |
@@ -728,6 +910,104 @@ To reset all data: `bash scripts/run-local.sh down` (removes volumes)
 | **GitHub REST API** | API | GitHub's HTTP API used (via PyGithub and MCP) for repository management, file creation, and workflow operations. |
 | **pytest** | Testing | Python testing framework used for agent unit and integration tests. Configured with `asyncio_mode = auto`. |
 | **asyncio** | Concurrency | Python's built-in async I/O library. All agents use async/await patterns for non-blocking operations. |
+
+---
+
+---
+
+## Appendix: RAG System Design Guide
+
+Reference guide for choosing RAG (Retrieval-Augmented Generation) strategies when extending agents with document retrieval capabilities.
+
+### When to Use RAG vs Simple Retrieval
+
+| Criteria | Simple Retrieval | RAG |
+|----------|-----------------|-----|
+| Exact key known | Yes | Overkill |
+| Small corpus (<100 docs) | Yes | Overkill |
+| Latency < 10ms required | Yes | Too slow |
+| Natural language queries | No | Yes |
+| Large corpus (>1000 docs) | Poor results | Yes |
+| Need best match, not exact | No | Yes |
+
+### Chunking Strategy
+
+```
+Is content structured? (code, markdown, JSON)
++-- YES -> Structure-Aware Chunking
+|   +-- Code -> Chunk by functions/classes
+|   +-- Markdown -> Chunk by headers
+|   +-- JSON -> Chunk by top-level objects
+|
++-- NO -> Quality critical?
+    +-- YES -> Semantic Chunking (10x slower, 2x cost, +15% quality)
+    +-- NO -> Fixed-Size Chunking (512 tokens, 50 token overlap)
+```
+
+| Strategy | Time/Doc | Quality | Best For |
+|----------|----------|---------|----------|
+| Fixed-size | 10ms | 70% | General text |
+| Structure-aware | 50ms | 85% | Code, docs |
+| Semantic | 500ms | 90% | Research, analysis |
+
+### Reranking Strategy
+
+| Latency Budget | Strategy | Accuracy | Cost/Query |
+|---------------|----------|----------|------------|
+| < 100ms | No reranking | 70% | $0.001 |
+| < 200ms | Lightweight (BM25 + metadata) | 80% | $0.002 |
+| < 1000ms | LLM reranking (Claude Haiku) | 90% | $0.010 |
+
+**Default choice**: Lightweight reranking covers 90% of use cases.
+
+### Stitching Strategy
+
+| Token Budget | Strategy | Trade-off |
+|-------------|----------|-----------|
+| > 4000 tokens | Concatenate all chunks | Complete but verbose |
+| 2000-4000 | Smart stitching (dedupe, order by relevance) | Balanced |
+| < 2000 | LLM synthesis (+$0.001, +500ms, -50% tokens) | Concise but may lose nuance |
+
+### Configuration Presets
+
+**"Fast & Cheap"** — logs, simple search, high QPS:
+```python
+{"chunking": "fixed_size", "chunk_size": 512, "reranking": False,
+ "stitching": "concatenate", "top_k": 10}
+# Latency: 50ms | Cost: $0.001 | Quality: 70%
+```
+
+**"Balanced" (recommended)** — code search, docs, 90% of queries:
+```python
+{"chunking": "structure_aware", "reranking": "lightweight",
+ "stitching": "smart", "top_k": 5}
+# Latency: 150ms | Cost: $0.003 | Quality: 85%
+```
+
+**"Quality First"** — critical queries, complex Q&A:
+```python
+{"chunking": "structure_aware", "reranking": "llm",
+ "stitching": "synthesize", "top_k": 3}
+# Latency: 800ms | Cost: $0.012 | Quality: 90%
+```
+
+### Common Pitfalls
+
+| Pitfall | Problem | Solution |
+|---------|---------|----------|
+| Over-chunking | Chunks too small, lose context | Min 100 tokens/chunk, 20% overlap |
+| Under-chunking | Chunks too large, poor retrieval | Max 1000 tokens/chunk |
+| No reranking | Vector search misses keyword matches | Add lightweight BM25 reranking |
+| Ignoring metadata | Search across irrelevant docs | Filter by language/type/date first |
+| No caching | Re-computing embeddings for static docs | Cache embeddings, 80% cost reduction |
+
+### Golden Rules
+
+1. Start with "Balanced" preset, optimize later
+2. Measure latency and quality before changing strategies
+3. Cache everything: embeddings, results, common queries
+4. Progressive enhancement: fast results first, refine later
+5. Always keep a fallback to simple retrieval
 
 ---
 

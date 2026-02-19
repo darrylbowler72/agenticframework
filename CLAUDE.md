@@ -385,7 +385,18 @@ The Migration Agent converts Jenkins pipelines to GitHub Actions workflows:
 
 The Policy Agent (port 8005) is a governance and compliance layer that evaluates content at every stage of the DevOps pipeline. It acts as a configurable gate that other agents can call before pushing code, creating repositories, generating workflows, or dispatching deployments.
 
-> **Status**: Documented design — ready to implement. See [Agent Implementation Pattern](#agent-implementation-pattern) for code patterns.
+> **Status**: Implemented and deployed. Container `policy-agent` on port 8005.
+
+### Technology Approach
+
+Uses **Claude AI with English-language rules** (not OPA/Rego). Consistent with all agents; no formal policy language needed.
+
+| | Claude AI + English Rules | OPA / Rego |
+|---|---|---|
+| **Rule authoring** | Natural language | Rego DSL |
+| **Flexibility** | Nuance, context, fuzzy matching | Strict logical evaluation |
+| **Consistency** | LLM varies (mitigated by temp 0.1) | Deterministic |
+| **Dependencies** | Already available | Additional infrastructure |
 
 ### Architecture
 
@@ -690,6 +701,26 @@ The existing documentation provides **sufficient detail** to implement the Polic
 | Structured logging (`self.logger`) | ✅ | agent_base.py |
 | `process_task()` abstract method | ✅ | agent_base.py |
 | docker-compose service entry | ✅ | docker-compose.local.yml (to be added) |
+
+## User Stories Reference
+
+Three implementation user stories are documented in [architecture.md](./architecture.md#user-stories):
+
+| Story | Priority | Key Agents |
+|-------|----------|------------|
+| **Application Scaffolding** | High | Planner, CodeGen, MCP GitHub |
+| **DevOps Chatbot** | High | Chatbot (all agents via routing) |
+| **Auto-Fix Broken Pipelines** | Critical | Remediation, MCP GitHub |
+
+Each story includes acceptance criteria, technical flow diagrams, and success metrics.
+
+## RAG System Design Guide
+
+A reference guide for RAG strategies (chunking, reranking, stitching) is in [architecture.md](./architecture.md#appendix-rag-system-design-guide). Key defaults for this framework:
+- Chunking: Structure-aware (500-1000 tokens)
+- Reranking: Lightweight (BM25 + metadata)
+- Stitching: Smart (dedupe + order)
+- Target: <200ms latency, <$0.005/query, >80% quality
 
 ## Common Troubleshooting
 

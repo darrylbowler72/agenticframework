@@ -189,6 +189,16 @@ This provides a single point for GitHub credential management and a standardized
 - **MCP Integration**: Model Context Protocol for standardized GitHub operations
 - **Cloud-Agnostic**: Runs on Podman, Docker, or any OCI-compatible runtime
 
+## User Stories
+
+| Story | Priority | Effort | Description |
+|-------|----------|--------|-------------|
+| Application Scaffolding | High | 8-10 pts | Self-service microservice creation with CI/CD, IaC, and K8s manifests via Backstage templates |
+| DevOps Chatbot | High | 13-15 pts | Natural language interface for all DevOps operations with AI-powered intent recognition |
+| Auto-Fix Broken Pipelines | Critical | 21 pts | AI-powered pipeline failure diagnosis and automated remediation with risk-based fix categorization |
+
+Detailed acceptance criteria, technical specifications, and implementation guides are in [Architecture Documentation](./architecture.md#user-stories).
+
 ## Project Structure
 
 ```
@@ -264,9 +274,8 @@ Data persists in the `local-data` volume at `/data`:
 
 ## Documentation
 
-- [Architecture Documentation](./architecture.md) - Detailed technical architecture
-- [Policy Agent Guide](./docs/policy-agent.md) - Governance policies, API reference, and integration guide
-- User Stories: See `/user-stories` directory for requirements
+- [Architecture Documentation](./architecture.md) - Technical architecture, user stories, RAG design guide
+- [CLAUDE.md](./CLAUDE.md) - Implementation patterns, API reference, agent-specific details
 
 ## Support
 
